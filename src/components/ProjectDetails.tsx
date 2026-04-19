@@ -1,0 +1,681 @@
+import { Project, UserRole, ProjectStatus } from '../types';
+import { 
+  ArrowLeft, 
+  MapPin, 
+  DollarSign, 
+  Calendar, 
+  User as UserIcon, 
+  FileText, 
+  Download, 
+  Plus, 
+  MessageSquare,
+  History,
+  MoreVertical,
+  CheckCircle2,
+  Construction,
+  Trash2
+} from 'lucide-react';
+import { useState } from 'react';
+
+interface ProjectDetailsProps {
+  project: Project;
+  role: UserRole;
+  onBack: () => void;
+  onUpdateProject?: (project: Project) => void;
+  onDeleteProject?: (id: string) => void;
+}
+
+export function ProjectDetails({ project, role, onBack, onUpdateProject, onDeleteProject }: ProjectDetailsProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'updates' | 'docs'>('overview');
+  const [localProject, setLocalProject] = useState(project);
+  const [newUpdate, setNewUpdate] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<ProjectStatus>(project.status);
+  const [updateProgress, setUpdateProgress] = useState(project.progress);
+  const [isPostingUpdate, setIsPostingUpdate] = useState(false);
+  const [postUpdateSuccess, setPostUpdateSuccess] = useState(false);
+  
+  // New States for Export and Edit
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportComplete, setExportComplete] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [deleteDocumentId, setDeleteDocumentId] = useState<string | null>(null);
+  const [isDeleteProjectModalOpen, setIsDeleteProjectModalOpen] = useState(false);
+  
+  const [editForm, setEditForm] = useState({
+    title: project.title,
+    description: project.description,
+    budget: project.budget,
+    location: project.location
+  });
+
+  const [uploadForm, setUploadForm] = useState({
+    name: '',
+    type: 'PDF'
+  });
+
+  // Keep track of downloading documents
+  const [downloadingDocs, setDownloadingDocs] = useState<string[]>([]);
+
+  const isAdmin = role === 'admin';
+  const isEmployee = role === 'employee';
+  const canModify = isAdmin || isEmployee;
+
+  const handlePostUpdate = async () => {
+    if (!newUpdate.trim()) return;
+    setIsPostingUpdate(true);
+    const update = {
+      id: `u${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      authorName: localProject.employeeName || 'Employee',
+      content: newUpdate,
+      statusChange: selectedStatus !== localProject.status ? selectedStatus : undefined
+    };
+    const updated = {
+      ...localProject,
+      status: selectedStatus,
+      progress: updateProgress,
+      updates: [update, ...localProject.updates]
+    };
+    setLocalProject(updated);
+    await onUpdateProject?.(updated);
+    setNewUpdate('');
+    setIsPostingUpdate(false);
+    setPostUpdateSuccess(true);
+    setTimeout(() => setPostUpdateSuccess(false), 2500);
+  };
+
+  const handleExport = () => {
+    setIsExporting(true);
+    setTimeout(() => {
+      setIsExporting(false);
+      setExportComplete(true);
+      setTimeout(() => setExportComplete(false), 2000);
+    }, 1500);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onUpdateProject) {
+      onUpdateProject({ ...project, ...editForm });
+    }
+    setIsEditModalOpen(false);
+  };
+
+  const handleDelete = () => {
+    setIsDeleteProjectModalOpen(true);
+  };
+
+  const confirmDeleteProject = () => {
+    onDeleteProject?.(project.id);
+    setIsDeleteProjectModalOpen(false);
+    onBack();
+  };
+
+  const handleUploadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (onUpdateProject && uploadForm.name) {
+      const newDoc = {
+        id: `d${Date.now()}`,
+        name: uploadForm.name + '.' + uploadForm.type.toLowerCase(),
+        type: uploadForm.type,
+        size: Math.floor(Math.random() * 10) + 1 + '.' + Math.floor(Math.random() * 9) + ' MB',
+        uploadDate: new Date().toISOString().split('T')[0]
+      };
+      onUpdateProject({
+        ...project,
+        documents: [...project.documents, newDoc]
+      });
+      setIsUploadModalOpen(false);
+      setUploadForm({ name: '', type: 'PDF' });
+    }
+  };
+
+  const confirmDeleteDocument = () => {
+    if (onUpdateProject && deleteDocumentId) {
+      onUpdateProject({
+        ...project,
+        documents: project.documents.filter(d => d.id !== deleteDocumentId)
+      });
+    }
+    setDeleteDocumentId(null);
+  };
+
+  const simulateDownload = (docId: string) => {
+    setDownloadingDocs([...downloadingDocs, docId]);
+    setTimeout(() => {
+      setDownloadingDocs(prev => prev.filter(id => id !== docId));
+    }, 2000);
+  };
+
+  return (
+    <div className="space-y-8 pb-12">
+      {/* Header View */}
+      <div className="flex flex-col md:flex-row justify-between items-start gap-6">
+        <div className="space-y-4">
+          <button 
+            onClick={onBack}
+            className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest hover:text-indigo-600 transition-colors group"
+          >
+            <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
+          </button>
+          <div className="flex items-center gap-4">
+            <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight uppercase tracking-tight">{project.title}</h2>
+            <span className={`px-4 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest text-white shadow-lg ${
+              project.status === 'in-progress' ? 'bg-blue-600' :
+              project.status === 'completed' ? 'bg-emerald-600' :
+              'bg-amber-600'
+            }`}>
+              {project.status.replace('-', ' ')}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-6 text-sm text-slate-500 font-medium">
+            <span className="flex items-center gap-2"><MapPin size={16} className="text-indigo-500" /> {project.location}</span>
+            <span className="flex items-center gap-2"><DollarSign size={16} className="text-indigo-500" /> {project.budget}</span>
+            <span className="flex items-center gap-2"><Calendar size={16} className="text-indigo-500" /> Start: {project.startDate}</span>
+          </div>
+        </div>
+        
+        <div className="flex gap-3 relative">
+          {canModify && (
+            <button 
+              onClick={handleExport} 
+              disabled={isExporting || exportComplete}
+              className={`px-6 py-3 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center gap-2 ${
+                exportComplete ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-slate-900 hover:bg-slate-800'
+              }`}
+            >
+              {isExporting ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : exportComplete ? (
+                <CheckCircle2 size={18} />
+              ) : (
+                <Download size={18} />
+              )}
+              {isExporting ? 'Exporting...' : exportComplete ? 'Downloaded' : 'Export Blueprint'}
+            </button>
+          )}
+          
+          <div className="relative">
+            <button 
+              onClick={() => setIsMenuOpen(!isMenuOpen)} 
+              className="p-3 bg-white border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50 transition-all"
+            >
+              <MoreVertical size={20} />
+            </button>
+            
+            {isMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-20">
+                <button 
+                  onClick={() => { setIsEditModalOpen(true); setIsMenuOpen(false); }}
+                  className="w-full text-left px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 border-b border-slate-100"
+                >
+                  Edit Project Details
+                </button>
+                {isAdmin && (
+                  <button 
+                    onClick={handleDelete}
+                    className="w-full text-left px-4 py-3 text-sm font-bold text-rose-600 hover:bg-rose-50"
+                  >
+                    Delete Project
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200">
+        {[
+          { id: 'overview', label: 'Overview', icon: Construction },
+          { id: 'updates', label: 'Timeline & Logs', icon: History },
+          { id: 'docs', label: 'Technical Assets', icon: FileText },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-2 px-8 py-4 text-xs font-bold uppercase tracking-widest transition-all border-b-2 ${
+              activeTab === tab.id 
+                ? 'border-indigo-600 text-indigo-600' 
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <tab.icon size={16} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        {/* Main Content Pane */}
+        <div className="lg:col-span-2 space-y-12">
+          {activeTab === 'overview' && (
+            <div className="space-y-12">
+              <div className="space-y-4">
+                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-widest">About the Project</h4>
+                <p className="text-slate-600 leading-relaxed text-lg border-l-4 border-indigo-100 pl-6 italic">
+                  {project.description}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Client Representative</h4>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                      <UserIcon size={24} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 tracking-tight">{project.clientName}</p>
+                      <p className="text-xs text-slate-400 font-medium">Primary Stakeholder</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Lead Engineer</h4>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                      <HardHat size={24} className="text-indigo-500" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 tracking-tight">{project.employeeName || 'Unassigned'}</p>
+                      <p className="text-xs text-slate-400 font-medium">Site Supervisor</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'updates' && (
+            <div className="space-y-8">
+              {canModify && (
+                <div className="bg-white border border-slate-200 rounded-[28px] p-8 shadow-sm space-y-6">
+                  <h4 className="font-bold text-slate-900 flex items-center gap-2 uppercase tracking-tight">
+                    <MessageSquare size={18} className="text-indigo-500" />
+                    Publish Site Update
+                  </h4>
+                  <div className="flex gap-4">
+                    <div className="flex-1 space-y-6">
+                      <textarea 
+                        value={newUpdate}
+                        onChange={(e) => setNewUpdate(e.target.value)}
+                        placeholder="Log daily activities, safety checks, or milestones..." 
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all resize-none text-sm min-h-[100px]"
+                      />
+
+                      {/* Phase Slider */}
+                      {(() => {
+                        const phaseMarkers = [
+                          { pct: 0,   label: 'Start' },
+                          { pct: 10,  label: 'Site Prep' },
+                          { pct: 30,  label: 'Foundation' },
+                          { pct: 55,  label: 'Structure' },
+                          { pct: 75,  label: 'Enclosure' },
+                          { pct: 90,  label: 'Fit-Out' },
+                          { pct: 100, label: 'Done' },
+                        ];
+                        return (
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-bold text-slate-500 uppercase">Progress</span>
+                              <span className="text-sm font-extrabold text-indigo-600">{updateProgress}%</span>
+                            </div>
+                            <div className="relative pt-1">
+                              <input
+                                type="range"
+                                min="0" max="100"
+                                value={updateProgress}
+                                onChange={(e) => setUpdateProgress(Number(e.target.value))}
+                                className="w-full accent-indigo-600 h-2 cursor-pointer"
+                              />
+                              {/* Tick marks + labels */}
+                              <div className="relative w-full mt-1">
+                                {phaseMarkers.map((m, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="absolute flex flex-col items-center"
+                                    style={{ left: `${m.pct}%`, transform: 'translateX(-50%)' }}
+                                  >
+                                    <div className={`w-px h-2 ${updateProgress >= m.pct ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
+                                    <span className={`text-[9px] font-bold uppercase tracking-wide mt-0.5 whitespace-nowrap ${updateProgress >= m.pct ? 'text-indigo-500' : 'text-slate-300'}`}>
+                                      {m.label}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="flex justify-between items-center gap-4 pt-4">
+                        <select 
+                          value={selectedStatus}
+                          onChange={(e) => setSelectedStatus(e.target.value as ProjectStatus)}
+                          className="bg-slate-100 border-none rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-tight text-slate-600 focus:outline-none"
+                        >
+                          <option value="pending">Set as Pending</option>
+                          <option value="in-progress">Set in Progress</option>
+                          <option value="completed">Set Completed</option>
+                          <option value="on-hold">On Hold</option>
+                        </select>
+                        <button 
+                          onClick={handlePostUpdate}
+                          disabled={isPostingUpdate || postUpdateSuccess}
+                          className={`px-6 py-2 text-white rounded-lg font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${
+                            postUpdateSuccess ? 'bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-700'
+                          }`}
+                        >
+                          {isPostingUpdate ? (
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : postUpdateSuccess ? (
+                            <><CheckCircle2 size={14} /> Posted!</>
+                          ) : (
+                            <><Plus size={14} /> Post Update</>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-6 relative before:absolute before:left-6 before:top-2 before:bottom-2 before:w-[1px] before:bg-slate-200">
+                {localProject.updates.map((update, i) => (
+                  <div key={update.id} className="relative pl-14">
+                    <div className="absolute left-[21px] top-1.5 w-2 h-2 rounded-full bg-indigo-600 border-2 border-white ring-4 ring-indigo-50"></div>
+                    <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm tracking-tight">{update.authorName}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{update.date}</p>
+                        </div>
+                        {update.statusChange && (
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded">
+                            <CheckCircle2 size={10} /> State: {update.statusChange}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-600 text-sm leading-relaxed">{update.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'docs' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {project.documents.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl group hover:border-indigo-300 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0">
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 truncate max-w-[150px]">{doc.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{doc.type} • {doc.size}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => simulateDownload(doc.id)} 
+                      className={`p-2 transition-colors rounded-lg ${
+                        downloadingDocs.includes(doc.id) 
+                          ? 'text-emerald-500 bg-emerald-50' 
+                          : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-50'
+                      }`}
+                      disabled={downloadingDocs.includes(doc.id)}
+                    >
+                      {downloadingDocs.includes(doc.id) ? <CheckCircle2 size={18} /> : <Download size={18} />}
+                    </button>
+                    {canModify && (
+                      <button onClick={() => setDeleteDocumentId(doc.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {canModify && (
+                <div onClick={() => setIsUploadModalOpen(true)} className="flex items-center justify-center p-4 border border-dashed border-slate-200 rounded-xl text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all cursor-pointer bg-slate-50/50 group">
+                  <span className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 group-hover:scale-105 transition-transform"><Plus size={16} /> Upload CAD Blueprint</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar Info */}
+        <div className="space-y-8">
+          {(() => {
+            const p = localProject.progress;
+            const phases = [
+              { name: 'Site Preparation', threshold: 10 },
+              { name: 'Foundation Work',  threshold: 30 },
+              { name: 'Structural Frame', threshold: 55 },
+              { name: 'Enclosure & MEP',  threshold: 75 },
+              { name: 'Interior Fit-Out', threshold: 90 },
+              { name: 'Handover & Sign-off', threshold: 100 },
+            ];
+            const currentPhaseIdx = phases.findIndex(ph => p < ph.threshold);
+            const activeIdx = currentPhaseIdx === -1 ? phases.length - 1 : currentPhaseIdx;
+            return (
+              <div className="bg-indigo-600 rounded-[28px] p-8 text-white shadow-xl shadow-indigo-100 overflow-hidden relative">
+                <Construction className="absolute -bottom-6 -right-6 w-32 h-32 opacity-10 rotate-12" />
+                <h5 className="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-6 px-1">Global Completion</h5>
+                <div className="flex items-end justify-between mb-4 px-1">
+                  <span className="text-5xl font-extrabold tracking-tighter">{p}%</span>
+                  <span className="text-xs font-bold opacity-60 uppercase mb-2">Phase {activeIdx + 1}/{phases.length}</span>
+                </div>
+                <div className="relative mb-8">
+                  <div className="h-2 w-full bg-white/20 rounded-full overflow-hidden">
+                    <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${p}%` }}></div>
+                  </div>
+                  {/* Phase tick marks */}
+                  {phases.slice(0, -1).map((phase, idx) => (
+                    <div
+                      key={idx}
+                      className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center"
+                      style={{ left: `${phase.threshold}%` }}
+                    >
+                      <div className={`w-0.5 h-3 -mt-0.5 ${p >= phase.threshold ? 'bg-white' : 'bg-white/30'}`}></div>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  {phases.map((phase, idx) => {
+                    const done = p >= phase.threshold;
+                    const active = idx === activeIdx && !done;
+                    return (
+                      <div key={idx} className={`flex justify-between items-center text-xs font-bold uppercase tracking-tight transition-opacity ${done ? 'opacity-80' : active ? 'opacity-100' : 'opacity-30'}`}>
+                        <span>{phase.name}</span>
+                        {done ? <CheckCircle2 size={14} /> : active ? <span className="animate-pulse">Active</span> : <span>Pending</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div className="bg-white border border-slate-200 rounded-[28px] p-8 shadow-sm">
+            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">Security & Logs</h5>
+            <div className="space-y-6">
+              <div className="flex gap-4">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0"></div>
+                <div className="text-xs">
+                  <p className="font-bold text-slate-900 tracking-tight uppercase tracking-tight">Access Control Verified</p>
+                  <p className="text-slate-500 mt-1">Biometric gate system active at Main Entrance Sector B.</p>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0"></div>
+                <div className="text-xs">
+                  <p className="font-bold text-slate-900 tracking-tight uppercase tracking-tight">Last Inspection</p>
+                  <p className="text-slate-500 mt-1">Certified by municipal council on {project.startDate}.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2 uppercase tracking-tight">
+                Edit Project
+              </h3>
+              <button onClick={() => setIsEditModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase">Project Title</label>
+                <input 
+                  type="text" 
+                  required
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
+                <textarea 
+                  required
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium min-h-[100px] resize-none" 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Location</label>
+                  <input 
+                    type="text" 
+                    value={editForm.location}
+                    onChange={(e) => setEditForm({...editForm, location: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Budget</label>
+                  <input 
+                    type="text" 
+                    value={editForm.budget}
+                    onChange={(e) => setEditForm({...editForm, budget: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
+                  />
+                </div>
+              </div>
+              <div className="pt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
+                <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Document Modal */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2 uppercase tracking-tight">
+                Upload Technical Asset
+              </h3>
+              <button onClick={() => setIsUploadModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleUploadSubmit} className="p-6 space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase">Document Name</label>
+                <input 
+                  type="text" 
+                  required
+                  value={uploadForm.name}
+                  onChange={(e) => setUploadForm({...uploadForm, name: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
+                  placeholder="e.g. Structural_Analysis_V2"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase">File Type</label>
+                <select 
+                  value={uploadForm.type}
+                  onChange={(e) => setUploadForm({...uploadForm, type: e.target.value})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium uppercase tracking-wide"
+                >
+                  <option value="PDF">PDF Document</option>
+                  <option value="CAD">AutoCAD File (.cad)</option>
+                  <option value="XLSX">Spreadsheet (.xlsx)</option>
+                  <option value="IMG">Image (.png, .jpg)</option>
+                </select>
+              </div>
+              
+              <div className="p-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center justify-center gap-2">
+                <Download size={24} className="text-slate-400" />
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Click or Drag file to simulate upload</p>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setIsUploadModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
+                <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">Upload File</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Confirmation Modal */}
+      {isDeleteProjectModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Project?</h3>
+            <p className="text-slate-500 text-sm mb-6">Are you sure you want to permanently delete "{project.title}"? This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIsDeleteProjectModalOpen(false)} className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
+              <button onClick={confirmDeleteProject} className="flex-1 py-3 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-lg shadow-rose-100 transition-all">Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Document Confirmation Modal */}
+      {deleteDocumentId && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Document?</h3>
+            <p className="text-slate-500 text-sm mb-6">Are you sure you want to delete this technical asset?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteDocumentId(null)} className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
+              <button onClick={confirmDeleteDocument} className="flex-1 py-3 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-lg shadow-rose-100 transition-all">Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Missing import fix
+function HardHat({ size, className }: { size?: number, className?: string }) {
+  return <Construction size={size} className={className} />;
+}

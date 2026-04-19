@@ -1,0 +1,64 @@
+{
+  "users": [
+    {
+      "id": "u1",
+      "name": "John Admin",
+      "email": "admin@structura.com",
+      "role": "admin",
+      "password": "password123"
+    },
+    {
+      "id": "u2",
+      "name": "Jane Employee",
+      "email": "jane@structura.com",
+      "role": "employee",
+      "password": "password123"
+    },
+    {
+      "id": "u3",
+      "name": "Michael Smith",
+      "email": "mike@structura.com",
+      "role": "employee",
+      "password": "password123"
+    },
+    {
+      "id": "u4",
+      "name": "Robert Client",
+      "email": "robert@client.com",
+      "role": "client",
+      "password": "password123"
+    },
+    {
+      "id": "u5",
+      "name": "ACME Corp",
+      "email": "contact@acme.com",
+      "role": "client",
+      "password": "password123"
+    },
+    {
+      "id": "u1776562200699",
+      "name": "anwar",
+      "email": "anwar@gmail.com",
+      "role": "employee",
+      "password": "123456"
+    }
+  ],
+  "projects": [
+    {
+      "id": "PRJ451",
+      "title": "omar's house",
+      "description": "New project placeholder description...",
+      "status": "pending",
+      "clientId": "u4",
+      "clientName": "Robert Client",
+      "employeeId": "u1776562200699",
+      "employeeName": "anwar",
+      "progress": 0,
+      "startDate": "2026-04-19",
+      "budget": "50000",
+      "location": "7omet chat",
+      "documents": [],
+      "updates": []
+    }
+  ]
+}
