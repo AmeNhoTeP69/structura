@@ -21,7 +21,13 @@ export interface EmployeeType {
   description?: string;
 }
 
-export type ProjectStatus = 'pending' | 'in-progress' | 'completed' | 'on-hold';
+export type ProjectStatus =
+  | 'pending'
+  | 'not-started'
+  | 'in-progress'
+  | 'completed'
+  | 'on-hold'
+  | 'cancelled';
 
 export interface Project {
   id: string;
