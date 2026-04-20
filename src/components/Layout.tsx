@@ -52,14 +52,32 @@ export function Layout({
 }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
   const unreadNotifications = notifications.filter((item) => !item.isRead);
   const previewNotifications = notifications.slice(0, 5);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
+      }
+    };
+
+    if (isNotificationsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isNotificationsOpen]);
+
 
   const navigation = {
     visitor: [
       { name: 'Home', icon: Home, id: 'home' },
       { name: 'Services', icon: Construction, id: 'services' },
-      { name: `Project Basket${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
+      { name: `My Projects${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
       { name: 'Contact', icon: Mail, id: 'contact' },
       { name: 'Login', icon: UserIcon, id: 'login' },
       { name: 'Register', icon: UserIcon, id: 'register' },
@@ -67,12 +85,13 @@ export function Layout({
     client: [
       { name: 'Dashboard', icon: LayoutDashboard, id: 'dashboard' },
       { name: 'Services', icon: Construction, id: 'services' },
-      { name: `Project Basket${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
+      { name: `My Projects${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
       { name: 'New Request', icon: Construction, id: 'new-request' },
       { name: 'My Requests', icon: FolderClock, id: 'requests' },
       { name: 'Notifications', icon: Bell, id: 'notifications' },
       { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
+
     employee: [
       { name: 'Dashboard', icon: LayoutDashboard, id: 'dashboard' },
       { name: 'Notifications', icon: Bell, id: 'notifications' },
@@ -82,6 +101,7 @@ export function Layout({
       { name: 'Admin Hub', icon: ShieldCheck, id: 'dashboard' },
       { name: 'Project Requests', icon: FolderClock, id: 'admin-project-requests' },
       { name: 'Team Management', icon: Users, id: 'users' },
+      { name: 'Client Accounts', icon: Users, id: 'clients' },
       { name: 'Project Control', icon: Briefcase, id: 'projects' },
       { name: 'Site Content', icon: Settings, id: 'site-content' },
       { name: 'Notifications', icon: Bell, id: 'notifications' },
@@ -164,7 +184,7 @@ export function Layout({
 
           <div className="flex items-center gap-4">
             {role !== 'visitor' && (
-              <div className="relative">
+              <div className="relative" ref={notificationRef}>
                 <button 
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={`p-2 rounded-lg relative transition-colors ${isNotificationsOpen ? 'bg-indigo-50 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}

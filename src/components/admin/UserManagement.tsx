@@ -17,6 +17,7 @@ import type { EmployeeType, User, UserRole } from '../../types';
 interface UserManagementProps {
   users: User[];
   setUsers: (users: User[]) => void;
+  currentUser: User | null;
 }
 
 interface UserFormState {
@@ -33,7 +34,7 @@ interface UserFormState {
 const emptyForm: UserFormState = {
   name: '',
   email: '',
-  role: 'client',
+  role: 'employee',
   password: '',
   phone: '',
   employeeTypeId: '',
@@ -41,7 +42,7 @@ const emptyForm: UserFormState = {
   notes: '',
 };
 
-export function UserManagement({ users, setUsers }: UserManagementProps) {
+export function UserManagement({ users, setUsers, currentUser }: UserManagementProps) {
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
@@ -70,6 +71,8 @@ export function UserManagement({ users, setUsers }: UserManagementProps) {
   }, []);
 
   const filteredUsers = users.filter((user) => {
+    if (user.role === 'client') return false;
+    
     const haystack = [
       user.name,
       user.email,
@@ -270,9 +273,9 @@ export function UserManagement({ users, setUsers }: UserManagementProps) {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Personnel Directory</h2>
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Team Management</h2>
           <p className="mt-1 max-w-2xl font-medium text-slate-500">
-            Manage clients, employees, administrators, employee types, and employee profiles from a
+            Manage employees, administrators, employee types, and employee profiles from a
             single admin workspace.
           </p>
         </div>
@@ -486,12 +489,12 @@ export function UserManagement({ users, setUsers }: UserManagementProps) {
                   <label className="text-xs font-bold uppercase text-slate-500">Role</label>
                   <select
                     value={userForm.role}
+                    disabled={editUser?.id === currentUser?.id}
                     onChange={(event) =>
                       setUserForm((prev) => ({ ...prev, role: event.target.value as UserRole }))
                     }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={`w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500 ${editUser?.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <option value="client">Client</option>
                     <option value="employee">Employee</option>
                     <option value="admin">Administrator</option>
                   </select>

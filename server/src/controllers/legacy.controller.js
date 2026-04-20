@@ -1,3 +1,4 @@
+const path = require('path');
 const { sendSuccess } = require('../utils/api-response');
 const { createHttpError } = require('../utils/http-error');
 const { toPublicUser } = require('../utils/user-mapper');
@@ -299,47 +300,52 @@ async function createProjectTimelineLog(req, res, next) {
     }
 
     const project = await getProjectByIdService(req.params.id, req.auth?.user);
+    const posterRole = req.auth?.user?.role;
+    const posterId = req.auth?.user?.id;
 
-    if (project && result.visibility === 'all' && req.auth?.user?.id !== project.clientId) {
-      await createNotificationForUser(project.clientId, {
-        type: 'PROJECT_TIMELINE_UPDATED',
-        title: 'New project update',
-        message: `${result.authorName || 'Team'} posted a visible update on ${project.title}.`,
-        relatedEntityType: 'PROJECT',
-        relatedEntityId: project.id,
-      });
-    }
+    if (project) {
+      const isVisibleToAll = result.timelineLog?.visibility === 'all';
 
-    if (project?.assignments?.length) {
-      const recipientIds = project.assignments
-        .map((assignment) => assignment.employeeUserId)
-        .filter((employeeUserId, index, array) =>
-          employeeUserId &&
-          employeeUserId !== req.auth?.user?.id &&
-          array.indexOf(employeeUserId) === index,
+      // Always notify the client when visibility=all and the poster is not the client
+      if (isVisibleToAll && posterId !== project.clientId) {
+        await createNotificationForUser(project.clientId, {
+          type: 'PROJECT_TIMELINE_UPDATED',
+          title: 'New project update',
+          message: `${result.timelineLog?.authorName || 'Team'} posted an update on "${project.title}".`,
+          relatedEntityType: 'PROJECT',
+          relatedEntityId: project.id,
+        });
+      }
+
+      // If poster is ADMIN → also notify all assigned employees
+      if (posterRole === 'ADMIN' && project.assignments?.length) {
+        const employeeIds = project.assignments
+          .map((a) => a.employeeUserId)
+          .filter((id, idx, arr) => id && arr.indexOf(id) === idx);
+
+        await Promise.all(
+          employeeIds.map((empId) =>
+            createNotificationForUser(empId, {
+              type: 'PROJECT_ACTIVITY',
+              title: 'Project update from admin',
+              message: `Admin posted an update on "${project.title}".`,
+              relatedEntityType: 'PROJECT',
+              relatedEntityId: project.id,
+            }),
+          ),
         );
+      }
 
-      await Promise.all(
-        recipientIds.map((employeeUserId) =>
-          createNotificationForUser(employeeUserId, {
-            type: 'PROJECT_ACTIVITY',
-            title: 'New project activity',
-            message: `${result.authorName || 'Team'} added a ${result.logType} on ${project.title}.`,
-            relatedEntityType: 'PROJECT',
-            relatedEntityId: project.id,
-          }),
-        ),
-      );
-    }
-
-    if (project && req.auth?.user?.role === 'employee') {
-      await notifyAdmins({
-        type: 'PROJECT_ACTIVITY',
-        title: 'Project activity',
-        message: `${result.authorName || 'An employee'} added a ${result.logType} on ${project.title}.`,
-        relatedEntityType: 'PROJECT',
-        relatedEntityId: project.id,
-      });
+      // If poster is EMPLOYEE → notify admins
+      if (posterRole === 'EMPLOYEE') {
+        await notifyAdmins({
+          type: 'PROJECT_ACTIVITY',
+          title: 'Project activity',
+          message: `${result.timelineLog?.authorName || 'An employee'} posted an update on "${project.title}".`,
+          relatedEntityType: 'PROJECT',
+          relatedEntityId: project.id,
+        });
+      }
     }
 
     return sendSuccess(res, result, 201);
@@ -409,7 +415,14 @@ async function listProjectDocuments(req, res, next) {
 
 async function createProjectDocument(req, res, next) {
   try {
-    const document = await createProjectDocumentService(req.params.id, req.body, req.auth?.user);
+    const payload = {
+      ...req.body,
+      fileName: req.body.fileName || (req.file ? req.file.originalname : undefined),
+      filePath: req.file ? `/uploads/projects/${req.params.id}/${req.file.filename}` : undefined,
+      mimeType: req.file ? req.file.mimetype : req.body.mimeType,
+      fileSize: req.file ? req.file.size : req.body.fileSize,
+    };
+    const document = await createProjectDocumentService(req.params.id, payload, req.auth?.user);
 
     if (!document) {
       return next(createHttpError(404, 'Project not found'));
@@ -445,7 +458,12 @@ async function getProjectDocumentDownload(req, res, next) {
       return next(createHttpError(404, 'Project document not found'));
     }
 
-    return sendSuccess(res, document);
+    if (!document.filePath) {
+      return next(createHttpError(404, 'File not found for this document entry'));
+    }
+
+    const absolutePath = path.join(process.cwd(), document.filePath);
+    return res.download(absolutePath, document.fileName || 'document');
   } catch (error) {
     return next(error);
   }

@@ -734,6 +734,7 @@ async function listProjectDocuments(projectId, authUser) {
 }
 
 async function createProjectDocument(projectId, payload, authUser) {
+  console.log(`[Repository] Creating document for project ${projectId} (User: ${authUser.id})`);
   const project = await prisma.project.findFirst({
     where: buildProjectAccessWhere(projectId, authUser),
     select: { id: true },

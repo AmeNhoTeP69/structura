@@ -161,7 +161,7 @@ export function AdminDashboard({ users, projects, projectRequests, onNavigate }:
           <h4 className="font-bold text-slate-900 text-sm uppercase tracking-widest px-2 mb-2">Quick Actions</h4>
           {[
             { label: 'Review Requests', icon: FolderClock, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('admin-project-requests') },
-            { label: 'Add New Client', icon: Users, color: 'bg-emerald-50 text-emerald-600', action: () => onNavigate('users') },
+            { label: 'Add New Client', icon: Users, color: 'bg-emerald-50 text-emerald-600', action: () => onNavigate('clients') },
             { label: 'Create Project', icon: Projector, color: 'bg-indigo-50 text-indigo-600', action: () => onNavigate('projects') },
             { label: 'Public Content', icon: Landmark, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('site-content') },
           ].map((action, i) => (

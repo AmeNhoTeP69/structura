@@ -14,6 +14,15 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isFilterActive, setIsFilterActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  
+  const filteredProjects = projects.filter(p => {
+    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          p.location.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
   
   const [newProject, setNewProject] = useState({
     title: '', location: '', budget: '', clientId: '', employeeId: ''
@@ -30,7 +39,7 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
       id: `PRJ${Math.floor(Math.random() * 1000)}`,
       title: newProject.title,
       description: 'New project placeholder description...',
-      status: 'pending',
+      status: 'not-started',
       clientId: client?.id || 'u5',
       clientName: client?.name || 'ACME Corp',
       employeeId: employee?.id,
@@ -105,14 +114,37 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {projects.map((project) => (
+      {isFilterActive && (
+        <div className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner mb-4">
+          <input 
+            type="text" 
+            placeholder="Search projects by title or location..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium"
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-slate-700"
+          >
+            <option value="all">All Statuses</option>
+            <option value="not-started">Not Started</option>
+            <option value="in-progress">In Progress</option>
+            <option value="on-hold">On Hold</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+      )}
+
+      <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" : "flex flex-col gap-4"}>
+        {filteredProjects.map((project) => (
           <div 
             key={project.id} 
-            className="group bg-white border border-slate-200 rounded-[32px] overflow-hidden hover:border-indigo-300 hover:shadow-2xl hover:shadow-slate-200 transition-all cursor-pointer flex flex-col"
+            className={`group bg-white border border-slate-200 rounded-[32px] overflow-hidden hover:border-indigo-300 hover:shadow-2xl hover:shadow-slate-200 transition-all cursor-pointer flex ${viewMode === 'list' ? 'flex-row h-40' : 'flex-col'}`}
             onClick={() => onSelectProject(project.id)}
           >
-            <div className="relative h-48 bg-slate-100 overflow-hidden">
+            <div className={`relative bg-slate-100 overflow-hidden ${viewMode === 'list' ? 'w-56 h-full shrink-0' : 'h-48'}`}>
               <img 
                 src={`https://picsum.photos/seed/${project.id}/800/600`} 
                 alt={project.title}
@@ -130,8 +162,8 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
               </div>
             </div>
 
-            <div className="p-8 flex-1 flex flex-col">
-              <div className="mb-6">
+            <div className={`p-8 flex-1 flex ${viewMode === 'list' ? 'flex-row items-center gap-12' : 'flex-col'}`}>
+              <div className={`${viewMode === 'list' ? 'mb-0 min-w-[200px]' : 'mb-6'}`}>
                 <h3 className="text-xl font-bold text-slate-900 mb-2 uppercase tracking-tight">{project.title}</h3>
                 <div className="flex flex-col gap-2">
                   <span className="flex items-center gap-1.5 text-xs text-slate-400 font-bold uppercase"><MapPin size={12} className="text-indigo-400" /> {project.location}</span>
@@ -139,7 +171,7 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
                 </div>
               </div>
 
-              <div className="mt-auto space-y-4">
+              <div className={`mt-auto space-y-4 ${viewMode === 'list' ? 'flex-1 mt-0' : ''}`}>
                 <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
                   <span>Development Progress</span>
                   <span className="text-indigo-600">{project.progress}%</span>
@@ -147,7 +179,7 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{ width: `${project.progress}%` }}></div>
                 </div>
-                <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
+                <div className={`pt-4 border-t border-slate-50 flex justify-between items-center ${viewMode === 'list' ? 'border-t-0 pt-0' : ''}`}>
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-bold uppercase">Timeline</span>
                     <span className="text-xs font-bold text-slate-900 uppercase">Est. {project.startDate}</span>

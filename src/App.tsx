@@ -22,6 +22,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminProjectRequestsPage } from './components/admin/AdminProjectRequestsPage';
 import { AdminProjectRequestDetailsPage } from './components/admin/AdminProjectRequestDetailsPage';
 import { UserManagement } from './components/admin/UserManagement';
+import { ClientManagement } from './components/admin/ClientManagement';
 import { ProjectManagement } from './components/admin/ProjectManagement';
 import { SiteContentManagement } from './components/admin/SiteContentManagement';
 import { clearAuthToken, clearStoredUser, getAuthHeaders, getAuthToken, getStoredUser, setAuthToken, setStoredUser } from './lib/auth';
@@ -486,11 +487,14 @@ export default function App() {
           return (
             <ProjectBasketPage
               services={projectBasket}
+              projects={projects}
+              currentUser={currentUser}
               isAuthenticated={false}
               onBrowseServices={() => setCurrentPage('services')}
               onProceed={() => setCurrentPage('login')}
               onRemoveService={handleRemoveServiceFromBasket}
               onClearBasket={handleClearBasket}
+              onSelectProject={(id) => handleNavigate('project-details', id)}
             />
           );
         case 'service-details':
@@ -568,11 +572,14 @@ export default function App() {
           return (
             <ProjectBasketPage
               services={projectBasket}
+              projects={projects}
+              currentUser={currentUser}
               isAuthenticated
               onBrowseServices={() => setCurrentPage('services')}
               onProceed={() => setCurrentPage('new-request')}
               onRemoveService={handleRemoveServiceFromBasket}
               onClearBasket={handleClearBasket}
+              onSelectProject={(id) => handleNavigate('project-details', id)}
             />
           );
         case 'new-request':
@@ -703,7 +710,8 @@ export default function App() {
               onNavigate={handleNavigate}
             />
           );
-        case 'users': return <UserManagement users={users} setUsers={setUsers} />;
+        case 'users': return <UserManagement users={users} setUsers={setUsers} currentUser={currentUser} />;
+        case 'clients': return <ClientManagement users={users} setUsers={setUsers} currentUser={currentUser} />;
         case 'projects': return <ProjectManagement projects={projects} setProjects={setProjects} users={users} onSelectProject={(id) => handleNavigate('project-details', id)} />;
         case 'site-content':
           return <SiteContentManagement />;

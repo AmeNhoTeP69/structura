@@ -33,8 +33,8 @@ const {
   validateAssignmentPatchBody,
   validateTimelineLogBody,
   validateTimelineLogPatchBody,
-  validateProjectDocumentBody,
 } = require('../middlewares/request-validation');
+const { uploadProjectDocument } = require('../middlewares/upload');
 
 const legacyRouter = Router();
 
@@ -97,7 +97,7 @@ legacyRouter.post(
   '/projects/:id/documents',
   authenticate,
   authorizeRoles('EMPLOYEE', 'ADMIN'),
-  validateRequest(validateProjectDocumentBody),
+  uploadProjectDocument,
   createProjectDocument,
 );
 legacyRouter.get(

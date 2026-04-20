@@ -12,9 +12,14 @@ const {
 function validateRequest(validator) {
   return (req, _res, next) => {
     try {
+      if (req.file) {
+        console.log(`[Validation] Validating request with file: ${req.file.originalname}`);
+        console.log(`[Validation] Body contains: ${JSON.stringify(req.body)}`);
+      }
       req.body = validator(req.body || {});
       return next();
     } catch (error) {
+      console.error(`[Validation] Failed: ${error.message}`);
       return next(error);
     }
   };
@@ -243,7 +248,6 @@ function validateTimelineLogPatchBody(body) {
 function validateProjectDocumentBody(body) {
   ensureObject(body);
   return {
-    fileName: readString(body.fileName, 'fileName', { min: 1, max: 255 }),
     documentType: readString(body.documentType, 'documentType', { min: 1, max: 80 }),
     filePath: readString(body.filePath, 'filePath', { required: false, max: 1000 }),
     mimeType: readString(body.mimeType, 'mimeType', { required: false, max: 120 }),

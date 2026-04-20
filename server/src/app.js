@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const { env } = require('./config/env');
 const { apiRouter } = require('./routes');
@@ -18,6 +19,7 @@ function createApp() {
     }),
   );
   app.use(express.json({ limit: env.jsonBodyLimit }));
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');

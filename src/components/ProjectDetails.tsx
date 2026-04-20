@@ -9,6 +9,7 @@ import {
   FileText, 
   Download, 
   Plus, 
+  Upload,
   MessageSquare,
   History,
   MoreVertical,
@@ -50,8 +51,7 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
   const [postUpdateSuccess, setPostUpdateSuccess] = useState(false);
   
   // New States for Export and Edit
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportComplete, setExportComplete] = useState(false);
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -76,13 +76,14 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
     name: '',
     type: 'OTHER',
     visibility: 'all' as 'all' | 'team-only',
-    mimeType: 'application/pdf',
-    fileSize: '102400',
+    selectedFile: null as File | null,
   });
 
   // Keep track of downloading documents
   const [downloadingDocs, setDownloadingDocs] = useState<string[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const [isUploading, setIsUploading] = useState(false);
   const isAdmin = role === 'admin';
   const isEmployee = role === 'employee';
   const canModify = isAdmin || isEmployee;
@@ -211,9 +212,9 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
           ...getAuthHeaders(),
         },
         body: JSON.stringify({
-          logType: logType.toUpperCase().replaceAll('-', '_'),
+          logType: logType,
           message: newUpdate,
-          visibility: logVisibility.toUpperCase().replaceAll('-', '_'),
+          visibility: logVisibility,
           progressValue: updateProgress,
           status: selectedStatus,
         }),
@@ -249,14 +250,7 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
     }
   };
 
-  const handleExport = () => {
-    setIsExporting(true);
-    setTimeout(() => {
-      setIsExporting(false);
-      setExportComplete(true);
-      setTimeout(() => setExportComplete(false), 2000);
-    }, 1500);
-  };
+
 
   const handleSaveEdit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -278,27 +272,32 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
 
   const handleUploadSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!uploadForm.name) return;
+    setUploadError(null);
+    if (!uploadForm.name || !uploadForm.selectedFile) {
+      setUploadError('Please select a file and provide a name.');
+      return;
+    }
 
+    const formData = new FormData();
+    // Appending text fields first is better for some middleware
+    formData.append('fileName', uploadForm.name);
+    formData.append('documentType', uploadForm.type);
+    formData.append('visibility', uploadForm.visibility);
+    formData.append('file', uploadForm.selectedFile);
+
+    setIsUploading(true);
     fetch(`http://localhost:5001/api/projects/${project.id}/documents`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         ...getAuthHeaders(),
       },
-      body: JSON.stringify({
-        fileName: uploadForm.name,
-        documentType: uploadForm.type,
-        visibility: uploadForm.visibility.toUpperCase().replaceAll('-', '_'),
-        mimeType: uploadForm.mimeType,
-        fileSize: Number(uploadForm.fileSize) || undefined,
-      }),
+      body: formData,
     })
       .then(async (response) => {
         const payload = await response.json().catch(() => null);
 
         if (!response.ok) {
-          throw new Error(payload?.error?.message || 'Failed to create project document');
+          throw new Error(payload?.error?.message || 'Failed to upload project document');
         }
 
         setProjectDocuments((prev) => [payload.data, ...prev]);
@@ -307,12 +306,15 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
           name: '',
           type: 'OTHER',
           visibility: 'all',
-          mimeType: 'application/pdf',
-          fileSize: '102400',
+          selectedFile: null,
         });
       })
       .catch((error) => {
-        setTimelineError(error instanceof Error ? error.message : 'Failed to create project document');
+        const msg = error instanceof Error ? error.message : 'Failed to upload project document';
+        setUploadError(msg);
+      })
+      .finally(() => {
+        setIsUploading(false);
       });
   };
 
@@ -349,7 +351,31 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
           throw new Error(payload?.error?.message || 'Failed to download document');
         }
 
-        return response.json();
+        // Get the blob from the response
+        const blob = await response.blob();
+        
+        // Try to get filename from content-disposition header if possible
+        const disposition = response.headers.get('content-disposition');
+        let filename = 'document-download';
+        if (disposition && disposition.indexOf('filename=') !== -1) {
+          filename = disposition.split('filename=')[1].replace(/"/g, '');
+        } else {
+          // Fallback to name from local state if available
+          const doc = projectDocuments.find(d => d.id === docId);
+          if (doc) filename = doc.name;
+        }
+
+        // Create a temporary link to trigger download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Cleanup
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
       })
       .catch((error) => {
         setTimelineError(error instanceof Error ? error.message : 'Failed to download document');
@@ -360,6 +386,7 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
         }, 800);
       });
   };
+
 
   const handleCreateAssignment = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -388,7 +415,17 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
         throw new Error(payload?.error?.message || 'Failed to create assignment');
       }
 
-      syncAssignments([payload.data, ...visibleAssignments.filter((item) => item.id !== payload.data.id)]);
+      let nextAssignments = [payload.data, ...visibleAssignments.filter((item) => item.id !== payload.data.id)];
+      
+      // Ensure only one lead
+      if (payload.data.isLead) {
+        nextAssignments = nextAssignments.map(a => 
+          a.id === payload.data.id ? a : { ...a, isLead: false }
+        );
+      }
+      
+      syncAssignments(nextAssignments);
+
       setAssignmentForm({ employeeUserId: '', assignmentRole: '', isLead: false });
     } catch (error) {
       setAssignmentError(error instanceof Error ? error.message : 'Failed to create assignment');
@@ -413,7 +450,7 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
         },
         body: JSON.stringify({
           message: editingMessage,
-          visibility: editingVisibility.toUpperCase().replaceAll('-', '_'),
+          visibility: editingVisibility,
         }),
       });
 
@@ -452,23 +489,16 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
     }
   };
 
-  const handleAssignmentPatch = async (assignmentId: string, patch: Partial<ProjectAssignment>) => {
+  const handleAssignmentPatch = async (assignmentId: string, data: Partial<ProjectAssignment>) => {
     try {
-      const response = await fetch(
-        `http://localhost:5001/api/projects/${project.id}/assignments/${assignmentId}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-          },
-          body: JSON.stringify({
-            employeeUserId: patch.employeeUserId,
-            assignmentRole: patch.assignmentRole,
-            isLead: patch.isLead,
-          }),
+      const response = await fetch(`http://localhost:5001/api/projects/${project.id}/assignments/${assignmentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
-      );
+        body: JSON.stringify(data),
+      });
 
       const payload = await response.json();
 
@@ -476,14 +506,25 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
         throw new Error(payload?.error?.message || 'Failed to update assignment');
       }
 
-      syncAssignments(visibleAssignments.map((assignment) => (
-        assignment.id === assignmentId ? payload.data : payload.data.isLead ? { ...assignment, isLead: false } : assignment
-      )));
+      let nextAssignments = visibleAssignments.map((item) =>
+        item.id === assignmentId ? { ...item, ...payload.data } : item
+      );
+
+      // Ensure only one lead if this one is marked as lead
+      if (data.isLead) {
+        nextAssignments = nextAssignments.map(a => 
+          a.id === assignmentId ? a : { ...a, isLead: false }
+        );
+      }
+
+      syncAssignments(nextAssignments);
       setAssignmentError('');
     } catch (error) {
       setAssignmentError(error instanceof Error ? error.message : 'Failed to update assignment');
     }
   };
+
+
 
   const handleAssignmentDelete = async (assignmentId: string) => {
     try {
@@ -536,24 +577,7 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
         </div>
         
         <div className="flex gap-3 relative">
-          {canModify && (
-            <button 
-              onClick={handleExport} 
-              disabled={isExporting || exportComplete}
-              className={`px-6 py-3 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center gap-2 ${
-                exportComplete ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-slate-900 hover:bg-slate-800'
-              }`}
-            >
-              {isExporting ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : exportComplete ? (
-                <CheckCircle2 size={18} />
-              ) : (
-                <Download size={18} />
-              )}
-              {isExporting ? 'Exporting...' : exportComplete ? 'Downloaded' : 'Export Blueprint'}
-            </button>
-          )}
+
           
           <div className="relative">
             <button 
@@ -1196,6 +1220,12 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
               </button>
             </div>
             <form onSubmit={handleUploadSubmit} className="p-6 space-y-5">
+              {uploadError && (
+                <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></div>
+                  {uploadError}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase">Document Name</label>
                 <input 
@@ -1222,38 +1252,78 @@ export function ProjectDetails({ project, currentUser, role, onBack, onUpdatePro
                   <option value="OTHER">Other</option>
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Visibility</label>
-                  <select
-                    value={uploadForm.visibility}
-                    onChange={(e) => setUploadForm({...uploadForm, visibility: e.target.value as 'all' | 'team-only'})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium uppercase tracking-wide"
-                  >
-                    <option value="all">Visible To Client</option>
-                    <option value="team-only">Team Only</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Approx Size (bytes)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={uploadForm.fileSize}
-                    onChange={(e) => setUploadForm({...uploadForm, fileSize: e.target.value})}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase">Visibility</label>
+                <select
+                  value={uploadForm.visibility}
+                  onChange={(e) => setUploadForm({...uploadForm, visibility: e.target.value as 'all' | 'team-only'})}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium uppercase tracking-wide"
+                >
+                  <option value="all">Visible To Client</option>
+                  <option value="team-only">Team Only</option>
+                </select>
               </div>
               
-              <div className="p-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center justify-center gap-2">
-                <Download size={24} className="text-slate-400" />
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Metadata-only upload for now</p>
+              <div className="p-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center justify-center gap-4 transition-all hover:border-indigo-300 hover:bg-white group">
+                {uploadForm.selectedFile ? (
+                  <div className="text-center">
+                    <FileText size={32} className="text-indigo-500 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-slate-900 truncate max-w-[250px]">{uploadForm.selectedFile.name}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{(uploadForm.selectedFile.size / 1024).toFixed(1)} KB</p>
+                    <button 
+                      type="button" 
+                      onClick={() => setUploadForm({...uploadForm, selectedFile: null})}
+                      className="mt-3 text-[10px] font-bold text-rose-500 uppercase tracking-widest hover:underline"
+                    >
+                      Remove File
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Upload size={32} className="text-slate-400 group-hover:text-indigo-400 transition-colors" />
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Select Technical File</p>
+                      <p className="text-[10px] text-slate-400 mt-1">PDF, Image, or Document (Max 10MB)</p>
+                    </div>
+                    <label className="mt-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors shadow-sm">
+                      Browse Files
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setUploadForm({
+                              ...uploadForm, 
+                              selectedFile: file,
+                              name: uploadForm.name || file.name.split('.')[0]
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                  </>
+                )}
               </div>
 
               <div className="pt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => setIsUploadModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">Upload File</button>
+                <button 
+                  type="submit" 
+                  disabled={isUploading}
+                  className={`px-5 py-2.5 text-white text-sm font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 ${
+                    isUploading ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  {isUploading ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Uploading...
+                    </>
+                  ) : (
+                    'Upload File'
+                  )}
+                </button>
               </div>
             </form>
           </div>
