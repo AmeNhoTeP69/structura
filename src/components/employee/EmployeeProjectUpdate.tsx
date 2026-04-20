@@ -1,6 +1,7 @@
-import { Project, ProjectStatus } from '../../types';
-import { useState } from 'react';
-import { ArrowLeft, MessageSquare, Plus, CheckCircle2, Save } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Project, ProjectStatus, ProjectTimelineLog } from '../../types';
+import { ArrowLeft, MessageSquare, CheckCircle2, Save, Eye, Users } from 'lucide-react';
+import { getAuthHeaders } from '../../lib/auth';
 
 interface EmployeeProjectUpdateProps {
   project: Project;
@@ -10,41 +11,91 @@ interface EmployeeProjectUpdateProps {
 
 export function EmployeeProjectUpdate({ project, onBack, onUpdateProject }: EmployeeProjectUpdateProps) {
   const [localProject, setLocalProject] = useState<Project>(project);
+  const [timelineLogs, setTimelineLogs] = useState<ProjectTimelineLog[]>([]);
   const [newUpdate, setNewUpdate] = useState('');
+  const [logType, setLogType] = useState<ProjectTimelineLog['logType']>('comment');
+  const [visibility, setVisibility] = useState<ProjectTimelineLog['visibility']>('team-only');
   const [selectedStatus, setSelectedStatus] = useState<ProjectStatus>(project.status);
   const [progress, setProgress] = useState(project.progress);
   const [isPosting, setIsPosting] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setLocalProject(project);
+    setSelectedStatus(project.status);
+    setProgress(project.progress);
+  }, [project]);
+
+  useEffect(() => {
+    fetch(`http://localhost:5001/api/projects/${project.id}/timeline-logs`, {
+      headers: getAuthHeaders(),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Unable to load project activity.');
+        }
+
+        return response.json();
+      })
+      .then((payload) => {
+        setTimelineLogs(payload?.data || []);
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  }, [project.id]);
   
   const handlePostUpdate = async () => {
     if (!newUpdate.trim() && selectedStatus === localProject.status && progress === localProject.progress) return;
 
     setIsPosting(true);
+    setError('');
 
-    const update = {
-      id: `u${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      authorName: localProject.employeeName || 'Employee',
-      content: newUpdate || 'Status updated.',
-      statusChange: selectedStatus !== localProject.status ? selectedStatus : undefined
-    };
+    try {
+      const response = await fetch(`http://localhost:5001/api/projects/${project.id}/timeline-logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          logType: logType.replace('-', '_').toUpperCase(),
+          message: newUpdate || 'Execution status updated.',
+          visibility: visibility.replace('-', '_').toUpperCase(),
+          progressValue: progress,
+          status: selectedStatus,
+        }),
+      });
 
-    const updated = {
-      ...localProject,
-      status: selectedStatus,
-      progress: progress,
-      updates: [update, ...localProject.updates]
-    };
+      const payload = await response.json().catch(() => null);
 
-    // Update local state immediately so timeline re-renders
-    setLocalProject(updated);
-    // Persist to backend
-    await onUpdateProject(updated);
-    
-    setNewUpdate('');
-    setIsPosting(false);
-    setPostSuccess(true);
-    setTimeout(() => setPostSuccess(false), 2500);
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Unable to publish project update.');
+      }
+
+      const nextProject = payload?.data?.project as Project;
+      const nextLog = payload?.data?.timelineLog as ProjectTimelineLog;
+
+      if (nextProject) {
+        setLocalProject(nextProject);
+        await onUpdateProject(nextProject);
+      }
+
+      if (nextLog) {
+        setTimelineLogs((prev) => [nextLog, ...prev]);
+      }
+
+      setNewUpdate('');
+      setLogType('comment');
+      setVisibility('team-only');
+      setPostSuccess(true);
+      setTimeout(() => setPostSuccess(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to publish project update.');
+    } finally {
+      setIsPosting(false);
+    }
   };
 
   return (
@@ -71,6 +122,11 @@ export function EmployeeProjectUpdate({ project, onBack, onUpdateProject }: Empl
               <MessageSquare size={18} className="text-indigo-500" />
               Publish Site Update
             </h4>
+            {error ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
+                {error}
+              </div>
+            ) : null}
             <div className="flex gap-4">
               <div className="flex-1 space-y-4">
                 <textarea 
@@ -124,7 +180,7 @@ export function EmployeeProjectUpdate({ project, onBack, onUpdateProject }: Empl
                         );
                       })()}
 
-                      <div className="flex justify-between items-center gap-4 pt-8">
+                      <div className="grid gap-3 md:grid-cols-3 pt-8">
                         <select 
                           value={selectedStatus}
                           onChange={(e) => setSelectedStatus(e.target.value as ProjectStatus)}
@@ -135,7 +191,28 @@ export function EmployeeProjectUpdate({ project, onBack, onUpdateProject }: Empl
                           <option value="completed">Set Completed</option>
                           <option value="on-hold">On Hold</option>
                         </select>
+                        <select
+                          value={logType}
+                          onChange={(e) => setLogType(e.target.value as ProjectTimelineLog['logType'])}
+                          className="bg-slate-100 border-none rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-tight text-slate-600 focus:outline-none"
+                        >
+                          <option value="comment">Comment</option>
+                          <option value="request">Request</option>
+                          <option value="note">Internal Note</option>
+                          <option value="progress-update">Progress Update</option>
+                          <option value="status-update">Status Update</option>
+                        </select>
+                        <select
+                          value={visibility}
+                          onChange={(e) => setVisibility(e.target.value as ProjectTimelineLog['visibility'])}
+                          className="bg-slate-100 border-none rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-tight text-slate-600 focus:outline-none"
+                        >
+                          <option value="team-only">Team Only</option>
+                          <option value="all">Visible To Client</option>
+                        </select>
+                      </div>
 
+                      <div className="flex justify-end items-center gap-4">
                   <button 
                     onClick={handlePostUpdate}
                     disabled={isPosting || postSuccess}
@@ -158,25 +235,31 @@ export function EmployeeProjectUpdate({ project, onBack, onUpdateProject }: Empl
 
           <div className="space-y-6 relative before:absolute before:left-6 before:top-2 before:bottom-2 before:w-[1px] before:bg-slate-200">
             <h4 className="font-bold text-slate-900 pl-14 mb-4 uppercase tracking-tight">Recent Updates</h4>
-            {localProject.updates.length === 0 && (
+            {timelineLogs.length === 0 && (
               <p className="pl-14 text-sm text-slate-500 italic">No updates have been posted yet.</p>
             )}
-            {localProject.updates.map((update, i) => (
-              <div key={update.id} className="relative pl-14">
+            {timelineLogs.map((log) => (
+              <div key={log.id} className="relative pl-14">
                 <div className="absolute left-[21px] top-1.5 w-2 h-2 rounded-full bg-indigo-600 border-2 border-white ring-4 ring-indigo-50"></div>
                 <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-start mb-3">
                     <div>
-                      <p className="font-bold text-slate-900 text-sm tracking-tight">{update.authorName}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{update.date}</p>
+                      <p className="font-bold text-slate-900 text-sm tracking-tight">{log.authorName}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                        {new Date(log.createdAt).toLocaleDateString()}
+                      </p>
                     </div>
-                    {update.statusChange && (
-                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded">
-                        <CheckCircle2 size={10} /> State: {update.statusChange}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded">
+                        {log.logType.replace('-', ' ')}
                       </span>
-                    )}
+                      <span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-slate-500">
+                        {log.visibility === 'all' ? <Eye size={10} /> : <Users size={10} />}
+                        {log.visibility === 'all' ? 'All' : 'Team'}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-slate-600 text-sm leading-relaxed">{update.content}</p>
+                  <p className="text-slate-600 text-sm leading-relaxed">{log.message}</p>
                 </div>
               </div>
             ))}
@@ -196,7 +279,7 @@ export function EmployeeProjectUpdate({ project, onBack, onUpdateProject }: Empl
                 }`}></div>
                 <div className="text-sm">
                   <p className="font-bold text-slate-900 uppercase tracking-tight">{localProject.status.replace('-', ' ')}</p>
-                  <p className="text-slate-500 mt-1 text-xs">Last updated {localProject.updates[0]?.date || localProject.startDate}</p>
+                  <p className="text-slate-500 mt-1 text-xs">Last updated {timelineLogs[0] ? new Date(timelineLogs[0].createdAt).toLocaleDateString() : localProject.startDate}</p>
                 </div>
               </div>
             </div>

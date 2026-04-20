@@ -15,7 +15,8 @@ import {
   User as UserIcon,
   Bell,
   Search,
-  ChevronRight
+  ChevronRight,
+  FolderClock
 } from 'lucide-react';
 import { UserRole, User, Project } from '../types';
 import { useState, useRef, useEffect } from 'react';
@@ -25,12 +26,13 @@ interface LayoutProps {
   role: UserRole;
   user: User | null;
   currentPage: string;
+  basketCount?: number;
   projects?: Project[];
   onNavigate: (page: string) => void;
   onLogout: () => void;
 }
 
-export function Layout({ children, role, user, currentPage, projects = [], onNavigate, onLogout }: LayoutProps) {
+export function Layout({ children, role, user, currentPage, basketCount = 0, projects = [], onNavigate, onLogout }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   
@@ -42,19 +44,29 @@ export function Layout({ children, role, user, currentPage, projects = [], onNav
     visitor: [
       { name: 'Home', icon: Home, id: 'home' },
       { name: 'Services', icon: Construction, id: 'services' },
+      { name: `Project Basket${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
       { name: 'Contact', icon: Mail, id: 'contact' },
       { name: 'Login', icon: UserIcon, id: 'login' },
+      { name: 'Register', icon: UserIcon, id: 'register' },
     ],
     client: [
       { name: 'Dashboard', icon: LayoutDashboard, id: 'dashboard' },
+      { name: 'Services', icon: Construction, id: 'services' },
+      { name: `Project Basket${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
+      { name: 'New Request', icon: Construction, id: 'new-request' },
+      { name: 'My Requests', icon: FolderClock, id: 'requests' },
+      { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
     employee: [
       { name: 'Dashboard', icon: LayoutDashboard, id: 'dashboard' },
+      { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
     admin: [
       { name: 'Admin Hub', icon: ShieldCheck, id: 'dashboard' },
+      { name: 'Project Requests', icon: FolderClock, id: 'admin-project-requests' },
       { name: 'Team Management', icon: Users, id: 'users' },
       { name: 'Project Control', icon: Briefcase, id: 'projects' },
+      { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
   };
 

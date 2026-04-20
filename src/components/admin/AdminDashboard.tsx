@@ -1,19 +1,23 @@
 import { useState } from 'react';
-import { User, Project } from '../../types';
-import { TrendingUp, TrendingDown, Minus, Activity, Users, Projector, Landmark } from 'lucide-react';
+import { User, Project, ProjectRequest } from '../../types';
+import { TrendingUp, TrendingDown, Minus, Activity, Users, Projector, Landmark, FolderClock } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface AdminDashboardProps {
   users: User[];
   projects: Project[];
+  projectRequests: ProjectRequest[];
   onNavigate: (page: string) => void;
 }
 
-export function AdminDashboard({ users, projects, onNavigate }: AdminDashboardProps) {
+export function AdminDashboard({ users, projects, projectRequests, onNavigate }: AdminDashboardProps) {
   const [timeRange, setTimeRange] = useState<'weekly' | 'monthly'>('monthly');
 
   // Compute real stats from live data
   const totalProjects = projects.length;
+  const totalRequests = projectRequests.length;
+  const pendingRequests = projectRequests.filter((request) => ['submitted', 'pending'].includes(request.status)).length;
+  const reviewRequests = projectRequests.filter((request) => request.status === 'under-review').length;
   const activeProjects = projects.filter(p => p.status === 'in-progress').length;
   const completedProjects = projects.filter(p => p.status === 'completed').length;
   const totalClients = users.filter(u => u.role === 'client').length;
@@ -38,9 +42,9 @@ export function AdminDashboard({ users, projects, onNavigate }: AdminDashboardPr
   };
 
   const stats = [
-    { label: 'Total Projects', value: totalProjects, change: `${activeProjects} active`, trend: 'up' as const },
+    { label: 'Project Requests', value: totalRequests, change: `${pendingRequests} incoming`, trend: 'up' as const },
     { label: 'Total Clients', value: totalClients, change: `${totalEmployees} engineers`, trend: 'up' as const },
-    { label: 'Avg. Completion', value: `${avgProgress}%`, change: `${completedProjects} done`, trend: avgProgress >= 50 ? 'up' as const : 'down' as const },
+    { label: 'Under Review', value: reviewRequests, change: `${activeProjects} active projects`, trend: 'up' as const },
     { label: 'Contract Value', value: formatValue(totalContractValue), change: `${projects.filter(p => p.budget !== 'TBD').length} priced`, trend: 'up' as const },
   ];
 
@@ -156,6 +160,7 @@ export function AdminDashboard({ users, projects, onNavigate }: AdminDashboardPr
         <div className="space-y-4">
           <h4 className="font-bold text-slate-900 text-sm uppercase tracking-widest px-2 mb-2">Quick Actions</h4>
           {[
+            { label: 'Review Requests', icon: FolderClock, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('admin-project-requests') },
             { label: 'Add New Client', icon: Users, color: 'bg-emerald-50 text-emerald-600', action: () => onNavigate('users') },
             { label: 'Create Project', icon: Projector, color: 'bg-indigo-50 text-indigo-600', action: () => onNavigate('projects') },
             { label: 'Financial Audit', icon: Landmark, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('dashboard') },

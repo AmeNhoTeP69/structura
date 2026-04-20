@@ -37,8 +37,8 @@
     },
     {
       "id": "u1776562200699",
-      "name": "anwar",
-      "email": "anwar@gmail.com",
+      "name": "anware",
+      "email": "anware@gmail.com",
       "role": "employee",
       "password": "123456"
     }
@@ -53,12 +53,19 @@
       "clientName": "Robert Client",
       "employeeId": "u1776562200699",
       "employeeName": "anwar",
-      "progress": 0,
+      "progress": 44,
       "startDate": "2026-04-19",
       "budget": "50000",
       "location": "7omet chat",
       "documents": [],
-      "updates": []
+      "updates": [
+        {
+          "id": "u1776621766702",
+          "date": "2026-04-19",
+          "authorName": "anwar",
+          "content": "tt"
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,82 @@
+const { Router } = require('express');
+
+const {
+  listUsers,
+  loginUser,
+  createLegacyUser,
+  updateLegacyUser,
+  deleteLegacyUser,
+  listProjects,
+  getProjectById,
+  createLegacyProject,
+  transitionProjectRequestToProject,
+  updateLegacyProject,
+  listProjectAssignments,
+  createProjectAssignment,
+  updateProjectAssignment,
+  deleteProjectAssignment,
+  listProjectTimelineLogs,
+  createProjectTimelineLog,
+  deleteLegacyProject,
+} = require('../controllers/legacy.controller');
+const { authenticate } = require('../middlewares/authenticate');
+const { authorizeRoles } = require('../middlewares/authorize-roles');
+
+const legacyRouter = Router();
+
+// Legacy JSON-backed endpoints kept temporarily during phase 1 migration.
+legacyRouter.post('/users/login', loginUser);
+legacyRouter.get('/users', authenticate, authorizeRoles('ADMIN'), listUsers);
+legacyRouter.post('/users', authenticate, authorizeRoles('ADMIN'), createLegacyUser);
+legacyRouter.put('/users/:id', authenticate, authorizeRoles('ADMIN'), updateLegacyUser);
+legacyRouter.delete('/users/:id', authenticate, authorizeRoles('ADMIN'), deleteLegacyUser);
+
+legacyRouter.get('/projects', authenticate, authorizeRoles('CLIENT', 'EMPLOYEE', 'ADMIN'), listProjects);
+legacyRouter.get('/projects/:id', authenticate, authorizeRoles('CLIENT', 'EMPLOYEE', 'ADMIN'), getProjectById);
+legacyRouter.get(
+  '/projects/:id/assignments',
+  authenticate,
+  authorizeRoles('CLIENT', 'EMPLOYEE', 'ADMIN'),
+  listProjectAssignments,
+);
+legacyRouter.post('/projects', authenticate, authorizeRoles('ADMIN'), createLegacyProject);
+legacyRouter.post(
+  '/projects/:id/assignments',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  createProjectAssignment,
+);
+legacyRouter.patch(
+  '/projects/:id/assignments/:assignmentId',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  updateProjectAssignment,
+);
+legacyRouter.delete(
+  '/projects/:id/assignments/:assignmentId',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  deleteProjectAssignment,
+);
+legacyRouter.get(
+  '/projects/:id/timeline-logs',
+  authenticate,
+  authorizeRoles('CLIENT', 'EMPLOYEE', 'ADMIN'),
+  listProjectTimelineLogs,
+);
+legacyRouter.post(
+  '/projects/:id/timeline-logs',
+  authenticate,
+  authorizeRoles('EMPLOYEE', 'ADMIN'),
+  createProjectTimelineLog,
+);
+legacyRouter.post(
+  '/project-requests/:id/transition-to-project',
+  authenticate,
+  authorizeRoles('ADMIN'),
+  transitionProjectRequestToProject,
+);
+legacyRouter.put('/projects/:id', authenticate, authorizeRoles('EMPLOYEE', 'ADMIN'), updateLegacyProject);
+legacyRouter.delete('/projects/:id', authenticate, authorizeRoles('ADMIN'), deleteLegacyProject);
+
+module.exports = { legacyRouter };

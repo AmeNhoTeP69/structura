@@ -11,7 +11,15 @@ interface EmployeeDashboardProps {
 
 export function EmployeeDashboard({ currentUser, projects, onSelectProject, onUpdateProject }: EmployeeDashboardProps) {
   const [isFilterActive, setIsFilterActive] = useState(false);
-  const employeeProjects = projects.filter(p => currentUser ? p.employeeId === currentUser.id : false);
+  const employeeProjects = projects.filter((project) => {
+    if (!currentUser) return false;
+
+    if (project.assignments && project.assignments.length > 0) {
+      return project.assignments.some((assignment) => assignment.employeeUserId === currentUser.id);
+    }
+
+    return project.employeeId === currentUser.id;
+  });
 
   const getStatusColor = (status: ProjectStatus) => {
     switch (status) {

@@ -1,4 +1,5 @@
-import { Project, UserRole, ProjectStatus } from '../types';
+import { FormEvent, useEffect, useState } from 'react';
+import { Project, ProjectAssignment, User, UserRole, ProjectStatus } from '../types';
 import { 
   ArrowLeft, 
   MapPin, 
@@ -15,7 +16,7 @@ import {
   Construction,
   Trash2
 } from 'lucide-react';
-import { useState } from 'react';
+import { getAuthHeaders } from '../lib/auth';
 
 interface ProjectDetailsProps {
   project: Project;
@@ -28,6 +29,8 @@ interface ProjectDetailsProps {
 export function ProjectDetails({ project, role, onBack, onUpdateProject, onDeleteProject }: ProjectDetailsProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'updates' | 'docs'>('overview');
   const [localProject, setLocalProject] = useState(project);
+  const [projectAssignments, setProjectAssignments] = useState<ProjectAssignment[]>(project.assignments || []);
+  const [availableEmployees, setAvailableEmployees] = useState<User[]>([]);
   const [newUpdate, setNewUpdate] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<ProjectStatus>(project.status);
   const [updateProgress, setUpdateProgress] = useState(project.progress);
@@ -42,6 +45,13 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [deleteDocumentId, setDeleteDocumentId] = useState<string | null>(null);
   const [isDeleteProjectModalOpen, setIsDeleteProjectModalOpen] = useState(false);
+  const [assignmentForm, setAssignmentForm] = useState({
+    employeeUserId: '',
+    assignmentRole: '',
+    isLead: false,
+  });
+  const [assignmentError, setAssignmentError] = useState('');
+  const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   
   const [editForm, setEditForm] = useState({
     title: project.title,
@@ -61,6 +71,76 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
   const isAdmin = role === 'admin';
   const isEmployee = role === 'employee';
   const canModify = isAdmin || isEmployee;
+  const visibleAssignments = projectAssignments.length > 0 ? projectAssignments : (localProject.assignments || []);
+  const leadAssignment = visibleAssignments.find((assignment) => assignment.isLead) || visibleAssignments[0];
+
+  useEffect(() => {
+    setLocalProject(project);
+    setProjectAssignments(project.assignments || []);
+  }, [project]);
+
+  useEffect(() => {
+    const headers = getAuthHeaders();
+
+    if (!headers.Authorization) {
+      return;
+    }
+
+    fetch(`http://localhost:5001/api/projects/${project.id}/assignments`, {
+      headers,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load project assignments');
+        }
+
+        return response.json();
+      })
+      .then((payload) => {
+        setProjectAssignments(payload?.data || []);
+      })
+      .catch((error) => {
+        console.error('Could not load project assignments.', error);
+      });
+  }, [project.id]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
+
+    fetch('http://localhost:5001/api/users', {
+      headers: getAuthHeaders(),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load employees');
+        }
+
+        return response.json();
+      })
+      .then((payload) => {
+        const employees = (payload?.data || []).filter((user: User) => user.role === 'employee');
+        setAvailableEmployees(employees);
+      })
+      .catch((error) => {
+        console.error('Could not load available employees.', error);
+      });
+  }, [isAdmin]);
+
+  const syncAssignments = (assignments: ProjectAssignment[]) => {
+    const nextLeadAssignment = assignments.find((assignment) => assignment.isLead) || assignments[0];
+    const nextProject = {
+      ...localProject,
+      assignments,
+      employeeId: nextLeadAssignment?.employeeUserId,
+      employeeName: nextLeadAssignment?.employeeName,
+    };
+
+    setProjectAssignments(assignments);
+    setLocalProject(nextProject);
+    onUpdateProject?.(nextProject);
+  };
 
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
@@ -68,7 +148,7 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
     const update = {
       id: `u${Date.now()}`,
       date: new Date().toISOString().split('T')[0],
-      authorName: localProject.employeeName || 'Employee',
+      authorName: leadAssignment?.employeeName || localProject.employeeName || 'Employee',
       content: newUpdate,
       statusChange: selectedStatus !== localProject.status ? selectedStatus : undefined
     };
@@ -95,7 +175,7 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
     }, 1500);
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (onUpdateProject) {
       onUpdateProject({ ...project, ...editForm });
@@ -113,7 +193,7 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
     onBack();
   };
 
-  const handleUploadSubmit = (e: React.FormEvent) => {
+  const handleUploadSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (onUpdateProject && uploadForm.name) {
       const newDoc = {
@@ -147,6 +227,97 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
     setTimeout(() => {
       setDownloadingDocs(prev => prev.filter(id => id !== docId));
     }, 2000);
+  };
+
+  const handleCreateAssignment = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!assignmentForm.employeeUserId) {
+      setAssignmentError('Select an employee to assign.');
+      return;
+    }
+
+    setIsSavingAssignment(true);
+    setAssignmentError('');
+
+    try {
+      const response = await fetch(`http://localhost:5001/api/projects/${project.id}/assignments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(assignmentForm),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to create assignment');
+      }
+
+      syncAssignments([payload.data, ...visibleAssignments.filter((item) => item.id !== payload.data.id)]);
+      setAssignmentForm({ employeeUserId: '', assignmentRole: '', isLead: false });
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Failed to create assignment');
+    } finally {
+      setIsSavingAssignment(false);
+    }
+  };
+
+  const handleAssignmentPatch = async (assignmentId: string, patch: Partial<ProjectAssignment>) => {
+    try {
+      const response = await fetch(
+        `http://localhost:5001/api/projects/${project.id}/assignments/${assignmentId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({
+            employeeUserId: patch.employeeUserId,
+            assignmentRole: patch.assignmentRole,
+            isLead: patch.isLead,
+          }),
+        },
+      );
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to update assignment');
+      }
+
+      syncAssignments(visibleAssignments.map((assignment) => (
+        assignment.id === assignmentId ? payload.data : payload.data.isLead ? { ...assignment, isLead: false } : assignment
+      )));
+      setAssignmentError('');
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Failed to update assignment');
+    }
+  };
+
+  const handleAssignmentDelete = async (assignmentId: string) => {
+    try {
+      const response = await fetch(
+        `http://localhost:5001/api/projects/${project.id}/assignments/${assignmentId}`,
+        {
+          method: 'DELETE',
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error?.message || 'Failed to delete assignment');
+      }
+
+      syncAssignments(visibleAssignments.filter((assignment) => assignment.id !== assignmentId));
+      setAssignmentError('');
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Failed to delete assignment');
+    }
   };
 
   return (
@@ -281,11 +452,150 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                       <HardHat size={24} className="text-indigo-500" />
                     </div>
                     <div>
-                      <p className="font-bold text-slate-900 tracking-tight">{project.employeeName || 'Unassigned'}</p>
-                      <p className="text-xs text-slate-400 font-medium">Site Supervisor</p>
+                      <p className="font-bold text-slate-900 tracking-tight">{leadAssignment?.employeeName || localProject.employeeName || 'Unassigned'}</p>
+                      <p className="text-xs text-slate-400 font-medium">{leadAssignment?.assignmentRole || 'Site Supervisor'}</p>
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-[28px] p-8 shadow-sm space-y-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h4 className="font-bold text-slate-900 uppercase tracking-tight">Project Team</h4>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {visibleAssignments.length > 0
+                        ? `${visibleAssignments.length} team member${visibleAssignments.length > 1 ? 's' : ''} assigned`
+                        : 'No employee has been assigned yet.'}
+                    </p>
+                  </div>
+                </div>
+
+                {visibleAssignments.length > 0 ? (
+                  <div className="space-y-4">
+                    {visibleAssignments.map((assignment) => (
+                      <div key={assignment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-slate-900">{assignment.employeeName}</p>
+                              {assignment.isLead && (
+                                <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-indigo-700">
+                                  Lead
+                                </span>
+                              )}
+                              {assignment.employeeTypeName && (
+                                <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                  {assignment.employeeTypeName}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {assignment.assignmentRole || 'Team member'}
+                              {assignment.speciality ? ` • ${assignment.speciality}` : ''}
+                            </p>
+                          </div>
+
+                          {isAdmin ? (
+                            <div className="flex flex-col gap-3 lg:items-end">
+                              <input
+                                type="text"
+                                value={assignment.assignmentRole}
+                                onChange={(e) => {
+                                  const nextAssignments = visibleAssignments.map((item) => (
+                                    item.id === assignment.id
+                                      ? { ...item, assignmentRole: e.target.value }
+                                      : item
+                                  ));
+                                  setProjectAssignments(nextAssignments);
+                                  setLocalProject((prev) => ({ ...prev, assignments: nextAssignments }));
+                                }}
+                                onBlur={(e) => {
+                                  if (e.target.value !== assignment.assignmentRole) {
+                                    handleAssignmentPatch(assignment.id, { assignmentRole: e.target.value });
+                                  }
+                                }}
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 lg:w-64"
+                                placeholder="Assignment role"
+                              />
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignmentPatch(assignment.id, { isLead: true })}
+                                  className={`rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-widest ${
+                                    assignment.isLead
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'bg-white text-slate-600 border border-slate-200'
+                                  }`}
+                                >
+                                  {assignment.isLead ? 'Lead Assigned' : 'Set Lead'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignmentDelete(assignment.id)}
+                                  className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-widest text-rose-600"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {isAdmin ? (
+                  <form onSubmit={handleCreateAssignment} className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 space-y-4">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <select
+                        value={assignmentForm.employeeUserId}
+                        onChange={(e) => setAssignmentForm((prev) => ({ ...prev, employeeUserId: e.target.value }))}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700"
+                      >
+                        <option value="">Select employee</option>
+                        {availableEmployees
+                          .filter((employee) => !visibleAssignments.some((assignment) => assignment.employeeUserId === employee.id))
+                          .map((employee) => (
+                            <option key={employee.id} value={employee.id}>
+                              {employee.name}
+                              {employee.employeeTypeName ? ` • ${employee.employeeTypeName}` : ''}
+                            </option>
+                          ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={assignmentForm.assignmentRole}
+                        onChange={(e) => setAssignmentForm((prev) => ({ ...prev, assignmentRole: e.target.value }))}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700"
+                        placeholder="e.g. Site supervisor"
+                      />
+                      <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={assignmentForm.isLead}
+                          onChange={(e) => setAssignmentForm((prev) => ({ ...prev, isLead: e.target.checked }))}
+                        />
+                        Mark as lead
+                      </label>
+                    </div>
+
+                    {assignmentError ? (
+                      <p className="text-sm font-medium text-rose-600">{assignmentError}</p>
+                    ) : null}
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSavingAssignment}
+                        className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-100 transition hover:bg-indigo-700 disabled:opacity-60"
+                      >
+                        {isSavingAssignment ? 'Assigning...' : 'Assign Employee'}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
               </div>
             </div>
           )}

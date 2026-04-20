@@ -1,319 +1,708 @@
-import { User, UserRole } from '../../types';
-import { Mail, Shield, UserPlus, MoreVertical, Trash2, Edit2, Search, X } from 'lucide-react';
-import { useState } from 'react';
+import {
+  Edit2,
+  Mail,
+  PencilLine,
+  Plus,
+  Search,
+  Shield,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { getAuthHeaders } from '../../lib/auth';
+import type { EmployeeType, User, UserRole } from '../../types';
 
 interface UserManagementProps {
   users: User[];
   setUsers: (users: User[]) => void;
 }
 
+interface UserFormState {
+  name: string;
+  email: string;
+  role: UserRole;
+  password: string;
+  phone: string;
+  employeeTypeId: string;
+  speciality: string;
+  notes: string;
+}
+
+const emptyForm: UserFormState = {
+  name: '',
+  email: '',
+  role: 'client',
+  password: '',
+  phone: '',
+  employeeTypeId: '',
+  speciality: '',
+  notes: '',
+};
+
 export function UserManagement({ users, setUsers }: UserManagementProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'role' | 'status' | null>(null);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
-  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'client' as UserRole, password: '' });
+  const [search, setSearch] = useState('');
+  const [userForm, setUserForm] = useState<UserFormState>(emptyForm);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUser.name || !newUser.email) return;
+  const [employeeTypes, setEmployeeTypes] = useState<EmployeeType[]>([]);
+  const [employeeTypeForm, setEmployeeTypeForm] = useState({ id: '', name: '', description: '' });
+  const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
+  const [typeToDelete, setTypeToDelete] = useState<string | null>(null);
 
-    try {
-      const res = await fetch('http://localhost:5000/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
+  useEffect(() => {
+    fetch('http://localhost:5001/api/admin/employee-types', {
+      headers: getAuthHeaders(),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Failed to load employee types');
+        return res.json();
+      })
+      .then((payload) => {
+        setEmployeeTypes(payload?.data || []);
+      })
+      .catch((error) => {
+        console.error('Unable to load employee types.', error);
       });
-      if (res.ok) {
-        const createdUser = await res.json();
-        setUsers([...users, createdUser]);
-      } else {
-        // Fallback if backend is down but not throwing catch
-        setUsers([...users, { ...newUser, id: `u${Date.now()}` }]);
-      }
-    } catch (err) {
-      // Fallback
-      setUsers([...users, { ...newUser, id: `u${Date.now()}` }]);
-    }
-    
-    setIsModalOpen(false);
-    setNewUser({ name: '', email: '', role: 'client', password: '' });
-  };
+  }, []);
 
-  const handleEditSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editUser) return;
-    try {
-      const res = await fetch(`http://localhost:5000/api/users/${editUser.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editUser)
-      });
-      if (res.ok) {
-        setUsers(users.map(u => u.id === editUser.id ? editUser : u));
-      } else {
-        setUsers(users.map(u => u.id === editUser.id ? editUser : u));
-      }
-    } catch (err) {
-      console.warn("Backend not running, updating locally");
-      setUsers(users.map(u => u.id === editUser.id ? editUser : u));
-    }
+  const filteredUsers = users.filter((user) => {
+    const haystack = [
+      user.name,
+      user.email,
+      user.role,
+      user.employeeTypeName || '',
+      user.speciality || '',
+    ]
+      .join(' ')
+      .toLowerCase();
+    return !search || haystack.includes(search.toLowerCase());
+  });
+
+  const openCreateUser = () => {
+    setUserForm(emptyForm);
     setEditUser(null);
+    setIsUserModalOpen(true);
   };
 
-  const confirmDelete = async () => {
-    if (deleteUserId) {
-      try {
-        await fetch(`http://localhost:5000/api/users/${deleteUserId}`, { method: 'DELETE' });
-      } catch (err) {
-        console.warn("Backend not running, deleting locally");
+  const openEditUser = (user: User) => {
+    setEditUser(user);
+    setUserForm({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      password: '',
+      phone: user.phone || '',
+      employeeTypeId: user.employeeTypeId || '',
+      speciality: user.speciality || '',
+      notes: user.notes || '',
+    });
+    setIsUserModalOpen(true);
+  };
+
+  const handleCreateOrUpdateUser = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const payload = {
+      name: userForm.name,
+      email: userForm.email,
+      role: userForm.role,
+      password: userForm.password || undefined,
+      phone: userForm.phone || undefined,
+      employeeTypeId: userForm.role === 'employee' ? userForm.employeeTypeId || undefined : undefined,
+      speciality: userForm.role === 'employee' ? userForm.speciality || undefined : undefined,
+      notes: userForm.role === 'employee' ? userForm.notes || undefined : undefined,
+    };
+
+    try {
+      if (editUser) {
+        const updateRes = await fetch(`http://localhost:5001/api/users/${editUser.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const updatePayload = await updateRes.json().catch(() => null);
+
+        if (!updateRes.ok) {
+          throw new Error(updatePayload?.error?.message || 'Unable to update user.');
+        }
+
+        let nextUser = updatePayload?.data as User;
+
+        if (payload.role === 'employee' && payload.employeeTypeId) {
+          const profileRes = await fetch(
+            `http://localhost:5001/api/admin/employees/${editUser.id}/profile`,
+            {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                ...getAuthHeaders(),
+              },
+              body: JSON.stringify({
+                employeeTypeId: payload.employeeTypeId,
+                speciality: payload.speciality,
+                notes: payload.notes,
+              }),
+            },
+          );
+
+          const profilePayload = await profileRes.json().catch(() => null);
+
+          if (profileRes.ok) {
+            nextUser = {
+              ...nextUser,
+              employeeTypeId: profilePayload?.data?.employeeTypeId,
+              employeeTypeName: profilePayload?.data?.employeeTypeName,
+              speciality: profilePayload?.data?.speciality,
+              notes: profilePayload?.data?.notes,
+            };
+          }
+        }
+
+        setUsers(users.map((user) => (user.id === editUser.id ? nextUser : user)));
+      } else {
+        const createRes = await fetch('http://localhost:5001/api/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const createPayload = await createRes.json().catch(() => null);
+
+        if (!createRes.ok) {
+          throw new Error(createPayload?.error?.message || 'Unable to create user.');
+        }
+
+        setUsers([createPayload?.data as User, ...users]);
       }
-      setUsers(users.filter(u => u.id !== deleteUserId));
+
+      setIsUserModalOpen(false);
+      setEditUser(null);
+      setUserForm(emptyForm);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteUserId) return;
+
+    try {
+      await fetch(`http://localhost:5001/api/users/${deleteUserId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      setUsers(users.filter((user) => user.id !== deleteUserId));
       setDeleteUserId(null);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleSaveEmployeeType = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const method = employeeTypeForm.id ? 'PUT' : 'POST';
+    const url = employeeTypeForm.id
+      ? `http://localhost:5001/api/admin/employee-types/${employeeTypeForm.id}`
+      : 'http://localhost:5001/api/admin/employee-types';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          name: employeeTypeForm.name,
+          description: employeeTypeForm.description,
+        }),
+      });
+
+      const payload = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(payload?.error?.message || 'Unable to save employee type.');
+      }
+
+      const nextType = payload?.data as EmployeeType;
+
+      setEmployeeTypes((current) =>
+        employeeTypeForm.id
+          ? current.map((item) => (item.id === employeeTypeForm.id ? nextType : item))
+          : [...current, nextType].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+
+      setEmployeeTypeForm({ id: '', name: '', description: '' });
+      setIsTypeModalOpen(false);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteEmployeeType = async () => {
+    if (!typeToDelete) return;
+
+    try {
+      await fetch(`http://localhost:5001/api/admin/employee-types/${typeToDelete}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      setEmployeeTypes((current) => current.filter((item) => item.id !== typeToDelete));
+      setTypeToDelete(null);
+    } catch (error) {
+      console.error(error);
     }
   };
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-            Personnel Directory
-          </h2>
-          <p className="text-slate-500 font-medium max-w-lg mt-1">Audit and configure access control for clients, engineers, and administrative staff.</p>
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Personnel Directory</h2>
+          <p className="mt-1 max-w-2xl font-medium text-slate-500">
+            Manage clients, employees, administrators, employee types, and employee profiles from a
+            single admin workspace.
+          </p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2"
-        >
-          <UserPlus size={18} /> Provision User
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setIsTypeModalOpen(true)}
+            className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50"
+          >
+            Manage Employee Types
+          </button>
+          <button
+            onClick={openCreateUser}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700"
+          >
+            <UserPlus size={18} />
+            Provision User
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-        <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="relative w-full md:w-80">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search by name or email..." 
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium" 
-            />
+      <div className="grid gap-8 xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="space-y-6">
+          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="relative w-full md:w-96">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by name, email, role, employee type..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setActiveFilter(activeFilter === 'role' ? null : 'role')}
-              className={`px-4 py-2 border rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
-                activeFilter === 'role' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              Filter Role
-            </button>
-            <button 
-              onClick={() => setActiveFilter(activeFilter === 'status' ? null : 'status')}
-              className={`px-4 py-2 border rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${
-                activeFilter === 'status' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              Status
-            </button>
+
+          <div className="rounded-[32px] border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-50/60">
+                    <th className="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      User Profile
+                    </th>
+                    <th className="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Role
+                    </th>
+                    <th className="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Employee Profile
+                    </th>
+                    <th className="px-8 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredUsers.map((user) => (
+                    <tr key={user.id} className="transition-all hover:bg-slate-50">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 font-bold text-slate-500">
+                            {user.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-bold tracking-tight text-slate-900">{user.name}</p>
+                            <p className="flex items-center gap-1 text-xs font-medium text-slate-400">
+                              <Mail size={12} />
+                              {user.email}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider ${
+                            user.role === 'admin'
+                              ? 'border border-indigo-100 bg-indigo-50 text-indigo-700'
+                              : user.role === 'employee'
+                                ? 'border border-blue-100 bg-blue-50 text-blue-700'
+                                : 'border border-slate-200 bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          <Shield size={12} />
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5">
+                        {user.role === 'employee' ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-slate-900">
+                              {user.employeeTypeName || 'No employee type'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {user.speciality || 'No speciality yet'}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-medium text-slate-400">Not applicable</span>
+                        )}
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openEditUser(user)}
+                            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-200"
+                            title="Edit user"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => setDeleteUserId(user.id)}
+                            className="rounded-lg p-2 text-rose-500 transition-colors hover:bg-rose-50"
+                            title="Delete user"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/50">
-                <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">User Profile</th>
-                <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Role Authority</th>
-                <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Access State</th>
-                <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Operations</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-slate-50 transition-all group">
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 font-bold border border-slate-200">
-                        {user.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-900 tracking-tight">{user.name}</p>
-                        <p className="text-xs text-slate-400 font-medium flex items-center gap-1"><Mail size={12} /> {user.email}</p>
-                      </div>
+        <aside className="space-y-6">
+          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-3">
+              <Users size={18} className="text-indigo-600" />
+              <h3 className="text-lg font-bold text-slate-900">Employee Types</h3>
+            </div>
+            <div className="mt-5 space-y-3">
+              {employeeTypes.map((type) => (
+                <div key={type.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-slate-900">{type.name}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {type.description || 'No description yet.'}
+                      </p>
                     </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${
-                      user.role === 'admin' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
-                      user.role === 'employee' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                      'bg-slate-100 text-slate-600 border border-slate-200'
-                    }`}>
-                      <Shield size={12} /> {user.role}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="text-xs font-bold text-slate-600">Active Now</span>
-                    </span>
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button 
-                        onClick={() => setEditUser(user)} 
-                        className="p-2 rounded-lg transition-colors hover:bg-slate-200 text-slate-500"
-                        title="Edit Properties"
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setEmployeeTypeForm({
+                            id: type.id,
+                            name: type.name,
+                            description: type.description || '',
+                          });
+                          setIsTypeModalOpen(true);
+                        }}
+                        className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white"
                       >
-                        <Edit2 size={16} />
+                        <PencilLine size={15} />
                       </button>
-                      <button onClick={() => setDeleteUserId(user.id)} className="p-2 hover:bg-rose-50 rounded-lg text-rose-500" title="Revoke Access"><Trash2 size={16} /></button>
+                      <button
+                        onClick={() => setTypeToDelete(type.id)}
+                        className="rounded-lg p-2 text-rose-500 transition-colors hover:bg-white"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+        </aside>
       </div>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-slate-900 flex items-center gap-2 uppercase tracking-tight">
-                <UserPlus size={18} className="text-indigo-600" /> Provision New User
+      {isUserModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 p-6">
+              <h3 className="flex items-center gap-2 font-bold uppercase tracking-tight text-slate-900">
+                <UserPlus size={18} className="text-indigo-600" />
+                {editUser ? 'Edit User' : 'Provision New User'}
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+              <button
+                onClick={() => {
+                  setIsUserModalOpen(false);
+                  setEditUser(null);
+                }}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600"
+              >
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleCreateUser} className="p-6 space-y-5">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Full Name</label>
-                <input 
-                  type="text" 
-                  required
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
-                  placeholder="e.g. Sarah Connor"
-                />
+            <form onSubmit={handleCreateOrUpdateUser} className="space-y-5 p-6">
+              <div className="grid gap-5 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-slate-500">Full Name</label>
+                  <input
+                    required
+                    value={userForm.name}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-slate-500">Email Address</label>
+                  <input
+                    required
+                    type="email"
+                    value={userForm.email}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, email: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-slate-500">Role</label>
+                  <select
+                    value={userForm.role}
+                    onChange={(event) =>
+                      setUserForm((prev) => ({ ...prev, role: event.target.value as UserRole }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="client">Client</option>
+                    <option value="employee">Employee</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-slate-500">Phone</label>
+                  <input
+                    value={userForm.phone}
+                    onChange={(event) => setUserForm((prev) => ({ ...prev, phone: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Email Address</label>
-                <input 
-                  type="email" 
-                  required
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
-                  placeholder="e.g. j.doe@company.com"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Password</label>
-                <input 
-                  type="text" 
-                  required
-                  value={newUser.password}
-                  onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
-                  placeholder="Temporary password..."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Access Level</label>
-                <select 
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({...newUser, role: e.target.value as UserRole})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-bold uppercase tracking-wide"
+
+              {!editUser ? (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-slate-500">Password</label>
+                  <input
+                    required
+                    value={userForm.password}
+                    onChange={(event) =>
+                      setUserForm((prev) => ({ ...prev, password: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              ) : null}
+
+              {userForm.role === 'employee' ? (
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-slate-500">Employee Type</label>
+                    <select
+                      required
+                      value={userForm.employeeTypeId}
+                      onChange={(event) =>
+                        setUserForm((prev) => ({ ...prev, employeeTypeId: event.target.value }))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Select employee type</option>
+                      {employeeTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-slate-500">Speciality</label>
+                    <input
+                      value={userForm.speciality}
+                      onChange={(event) =>
+                        setUserForm((prev) => ({ ...prev, speciality: event.target.value }))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold uppercase text-slate-500">Notes</label>
+                    <textarea
+                      rows={4}
+                      value={userForm.notes}
+                      onChange={(event) => setUserForm((prev) => ({ ...prev, notes: event.target.value }))}
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserModalOpen(false);
+                    setEditUser(null);
+                  }}
+                  className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100"
                 >
-                  <option value="client">Client</option>
-                  <option value="employee">Employee</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-              <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">Create Account</button>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition-all hover:bg-indigo-700"
+                >
+                  {editUser ? 'Save Changes' : 'Create Account'}
+                </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Edit User Modal */}
-      {editUser && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-slate-900 flex items-center gap-2 uppercase tracking-tight">
-                <Edit2 size={18} className="text-indigo-600" /> Edit Profile
+      {isTypeModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 p-6">
+              <h3 className="font-bold uppercase tracking-tight text-slate-900">
+                {employeeTypeForm.id ? 'Edit Employee Type' : 'Create Employee Type'}
               </h3>
-              <button onClick={() => setEditUser(null)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+              <button
+                onClick={() => {
+                  setIsTypeModalOpen(false);
+                  setEmployeeTypeForm({ id: '', name: '', description: '' });
+                }}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600"
+              >
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+            <form onSubmit={handleSaveEmployeeType} className="space-y-5 p-6">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Full Name</label>
-                <input 
-                  type="text" 
+                <label className="text-xs font-bold uppercase text-slate-500">Name</label>
+                <input
                   required
-                  value={editUser.name}
-                  onChange={(e) => setEditUser({...editUser, name: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
+                  value={employeeTypeForm.name}
+                  onChange={(event) =>
+                    setEmployeeTypeForm((prev) => ({ ...prev, name: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Email Address</label>
-                <input 
-                  type="email" 
-                  required
-                  value={editUser.email}
-                  onChange={(e) => setEditUser({...editUser, email: e.target.value})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium" 
+                <label className="text-xs font-bold uppercase text-slate-500">Description</label>
+                <textarea
+                  rows={4}
+                  value={employeeTypeForm.description}
+                  onChange={(event) =>
+                    setEmployeeTypeForm((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase">Access Level</label>
-                <select 
-                  value={editUser.role}
-                  onChange={(e) => setEditUser({...editUser, role: e.target.value as UserRole})}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-bold uppercase tracking-wide"
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTypeModalOpen(false);
+                    setEmployeeTypeForm({ id: '', name: '', description: '' });
+                  }}
+                  className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100"
                 >
-                  <option value="client">Client</option>
-                  <option value="employee">Employee</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-              <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setEditUser(null)} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all">Save Changes</button>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition-all hover:bg-indigo-700"
+                >
+                  Save Type
+                </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Delete Confirmation Modal */}
-      {deleteUserId && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center">
-            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      {deleteUserId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-600">
               <Trash2 size={24} />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Revoke Access?</h3>
-            <p className="text-slate-500 text-sm mb-6">Are you sure you want to permanently revoke this user's access? This action cannot be undone.</p>
+            <h3 className="mb-2 text-xl font-bold text-slate-900">Delete User?</h3>
+            <p className="mb-6 text-sm text-slate-500">
+              This will permanently revoke access for the selected account.
+            </p>
             <div className="flex gap-3">
-              <button onClick={() => setDeleteUserId(null)} className="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors">Cancel</button>
-              <button onClick={confirmDelete} className="flex-1 py-3 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-lg shadow-rose-100 transition-all">Yes, Revoke</button>
+              <button
+                onClick={() => setDeleteUserId(null)}
+                className="flex-1 rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleDeleteUser()}
+                className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white shadow-lg shadow-rose-100 transition-all hover:bg-rose-700"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
+
+      {typeToDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="mb-2 text-xl font-bold text-slate-900">Delete Employee Type?</h3>
+            <p className="mb-6 text-sm text-slate-500">
+              Remove this type only if it is no longer used by employee profiles.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setTypeToDelete(null)}
+                className="flex-1 rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleDeleteEmployeeType()}
+                className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white shadow-lg shadow-rose-100 transition-all hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

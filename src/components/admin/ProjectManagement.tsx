@@ -1,6 +1,7 @@
+import { FormEvent, useState } from 'react';
 import { Project, User } from '../../types';
 import { Plus, Filter, LayoutGrid, List as ListIcon, MapPin, DollarSign, Calendar, X, Building2 } from 'lucide-react';
-import { useState } from 'react';
+import { getAuthHeaders } from '../../lib/auth';
 
 interface ProjectManagementProps {
   projects: Project[];
@@ -18,14 +19,14 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
     title: '', location: '', budget: '', clientId: '', employeeId: ''
   });
 
-  const handleCreateProject = async (e: React.FormEvent) => {
+  const handleCreateProject = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!newProject.title) return;
     
     const client = users.find(u => u.id === newProject.clientId) || users.find(u => u.role === 'client');
     const employee = users.find(u => u.id === newProject.employeeId) || users.find(u => u.role === 'employee');
 
-    const projectData = {
+    const projectData: Project = {
       id: `PRJ${Math.floor(Math.random() * 1000)}`,
       title: newProject.title,
       description: 'New project placeholder description...',
@@ -43,14 +44,14 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
     };
 
     try {
-      const res = await fetch('http://localhost:5000/api/projects', {
+      const res = await fetch('http://localhost:5001/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(projectData)
       });
       if (res.ok) {
         const createdProject = await res.json();
-        setProjects([createdProject, ...projects]);
+        setProjects([createdProject.data || createdProject, ...projects]);
       } else {
         setProjects([projectData, ...projects]);
       }
@@ -223,7 +224,7 @@ export function ProjectManagement({ projects, setProjects, users, onSelectProjec
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Assign Engineer</label>
+                  <label className="text-xs font-bold text-slate-500 uppercase">Assign Initial Employee</label>
                   <select 
                     value={newProject.employeeId}
                     onChange={(e) => setNewProject({...newProject, employeeId: e.target.value})}

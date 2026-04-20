@@ -1,47 +1,41 @@
 import { User } from '../../types';
-import { useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { Shield, ChevronRight, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
-  users: User[];
-  onLogin: (user: User) => void;
+  onLogin: (user: User, token?: string) => void;
+  onShowRegister: () => void;
 }
 
-export function LoginPage({ users, onLogin }: LoginPageProps) {
+export function LoginPage({ onLogin, onShowRegister }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
     try {
-      // Partner 1: Backend Integration
-      const res = await fetch('http://localhost:5000/api/users/login', {
+      const res = await fetch('http://localhost:5001/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
 
       if (res.ok) {
-        const user = await res.json();
-        onLogin(user);
+        const payload = await res.json();
+        onLogin(payload.data.user, payload.data.token);
       } else {
-        // Fallback to local mock array if backend returns error
-        const localUser = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-        if (localUser) onLogin(localUser);
-        else setError('Invalid email or password.');
+        const payload = await res.json().catch(() => null);
+        setError(payload?.error?.message || 'Invalid email or password.');
       }
     } catch (err) {
-      // Backend is off, fallback to local
-      console.warn("Backend off, using local login.");
-      const localUser = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-      if (localUser) onLogin(localUser);
-      else setError('Invalid email or password.');
+      console.warn("Backend auth unavailable.");
+      setError('Unable to reach authentication service.');
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +97,7 @@ export function LoginPage({ users, onLogin }: LoginPageProps) {
         </form>
 
         <p className="mt-8 text-center text-sm text-slate-500">
-          Don't have an account? <button className="text-indigo-600 font-bold hover:underline">Request access</button>
+          Don't have an account? <button type="button" onClick={onShowRegister} className="text-indigo-600 font-bold hover:underline">Create one</button>
         </p>
       </div>
     </div>
