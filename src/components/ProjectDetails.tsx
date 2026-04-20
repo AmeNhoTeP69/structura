@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Project, ProjectAssignment, User, UserRole, ProjectStatus } from '../types';
+import { Project, ProjectAssignment, ProjectStatus, ProjectTimelineLog, User, UserRole } from '../types';
 import { 
   ArrowLeft, 
   MapPin, 
@@ -14,24 +14,36 @@ import {
   MoreVertical,
   CheckCircle2,
   Construction,
-  Trash2
+  Trash2,
+  Pencil,
+  Eye,
+  Users as UsersIcon
 } from 'lucide-react';
 import { getAuthHeaders } from '../lib/auth';
 
 interface ProjectDetailsProps {
   project: Project;
+  currentUser?: User | null;
   role: UserRole;
   onBack: () => void;
   onUpdateProject?: (project: Project) => void;
   onDeleteProject?: (id: string) => void;
 }
 
-export function ProjectDetails({ project, role, onBack, onUpdateProject, onDeleteProject }: ProjectDetailsProps) {
+export function ProjectDetails({ project, currentUser, role, onBack, onUpdateProject, onDeleteProject }: ProjectDetailsProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'updates' | 'docs'>('overview');
   const [localProject, setLocalProject] = useState(project);
   const [projectAssignments, setProjectAssignments] = useState<ProjectAssignment[]>(project.assignments || []);
+  const [timelineLogs, setTimelineLogs] = useState<ProjectTimelineLog[]>([]);
+  const [projectDocuments, setProjectDocuments] = useState(project.documents || []);
   const [availableEmployees, setAvailableEmployees] = useState<User[]>([]);
   const [newUpdate, setNewUpdate] = useState('');
+  const [logType, setLogType] = useState<ProjectTimelineLog['logType']>('comment');
+  const [logVisibility, setLogVisibility] = useState<ProjectTimelineLog['visibility']>('all');
+  const [timelineError, setTimelineError] = useState('');
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState('');
+  const [editingVisibility, setEditingVisibility] = useState<ProjectTimelineLog['visibility']>('all');
   const [selectedStatus, setSelectedStatus] = useState<ProjectStatus>(project.status);
   const [updateProgress, setUpdateProgress] = useState(project.progress);
   const [isPostingUpdate, setIsPostingUpdate] = useState(false);
@@ -62,7 +74,10 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
 
   const [uploadForm, setUploadForm] = useState({
     name: '',
-    type: 'PDF'
+    type: 'OTHER',
+    visibility: 'all' as 'all' | 'team-only',
+    mimeType: 'application/pdf',
+    fileSize: '102400',
   });
 
   // Keep track of downloading documents
@@ -77,6 +92,9 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
   useEffect(() => {
     setLocalProject(project);
     setProjectAssignments(project.assignments || []);
+    setProjectDocuments(project.documents || []);
+    setSelectedStatus(project.status);
+    setUpdateProgress(project.progress);
   }, [project]);
 
   useEffect(() => {
@@ -128,6 +146,44 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
       });
   }, [isAdmin]);
 
+  useEffect(() => {
+    fetch(`http://localhost:5001/api/projects/${project.id}/timeline-logs`, {
+      headers: getAuthHeaders(),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load timeline logs');
+        }
+
+        return response.json();
+      })
+      .then((payload) => {
+        setTimelineLogs(payload?.data || []);
+      })
+      .catch((error) => {
+        console.error('Could not load project timeline logs.', error);
+      });
+  }, [project.id, role]);
+
+  useEffect(() => {
+    fetch(`http://localhost:5001/api/projects/${project.id}/documents`, {
+      headers: getAuthHeaders(),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('Failed to load project documents');
+        }
+
+        return response.json();
+      })
+      .then((payload) => {
+        setProjectDocuments(payload?.data || []);
+      })
+      .catch((error) => {
+        console.error('Could not load project documents.', error);
+      });
+  }, [project.id, role]);
+
   const syncAssignments = (assignments: ProjectAssignment[]) => {
     const nextLeadAssignment = assignments.find((assignment) => assignment.isLead) || assignments[0];
     const nextProject = {
@@ -145,25 +201,52 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
   const handlePostUpdate = async () => {
     if (!newUpdate.trim()) return;
     setIsPostingUpdate(true);
-    const update = {
-      id: `u${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      authorName: leadAssignment?.employeeName || localProject.employeeName || 'Employee',
-      content: newUpdate,
-      statusChange: selectedStatus !== localProject.status ? selectedStatus : undefined
-    };
-    const updated = {
-      ...localProject,
-      status: selectedStatus,
-      progress: updateProgress,
-      updates: [update, ...localProject.updates]
-    };
-    setLocalProject(updated);
-    await onUpdateProject?.(updated);
-    setNewUpdate('');
-    setIsPostingUpdate(false);
-    setPostUpdateSuccess(true);
-    setTimeout(() => setPostUpdateSuccess(false), 2500);
+    setTimelineError('');
+
+    try {
+      const response = await fetch(`http://localhost:5001/api/projects/${project.id}/timeline-logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          logType: logType.toUpperCase().replaceAll('-', '_'),
+          message: newUpdate,
+          visibility: logVisibility.toUpperCase().replaceAll('-', '_'),
+          progressValue: updateProgress,
+          status: selectedStatus,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to publish update');
+      }
+
+      const nextProject = payload?.data?.project as Project | undefined;
+      const nextLog = payload?.data?.timelineLog as ProjectTimelineLog | undefined;
+
+      if (nextProject) {
+        setLocalProject(nextProject);
+        onUpdateProject?.(nextProject);
+      }
+
+      if (nextLog) {
+        setTimelineLogs((prev) => [nextLog, ...prev]);
+      }
+
+      setNewUpdate('');
+      setLogType('comment');
+      setLogVisibility(role === 'client' ? 'all' : 'all');
+      setPostUpdateSuccess(true);
+      setTimeout(() => setPostUpdateSuccess(false), 2500);
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : 'Failed to publish update');
+    } finally {
+      setIsPostingUpdate(false);
+    }
   };
 
   const handleExport = () => {
@@ -195,38 +278,87 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
 
   const handleUploadSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (onUpdateProject && uploadForm.name) {
-      const newDoc = {
-        id: `d${Date.now()}`,
-        name: uploadForm.name + '.' + uploadForm.type.toLowerCase(),
-        type: uploadForm.type,
-        size: Math.floor(Math.random() * 10) + 1 + '.' + Math.floor(Math.random() * 9) + ' MB',
-        uploadDate: new Date().toISOString().split('T')[0]
-      };
-      onUpdateProject({
-        ...project,
-        documents: [...project.documents, newDoc]
+    if (!uploadForm.name) return;
+
+    fetch(`http://localhost:5001/api/projects/${project.id}/documents`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        fileName: uploadForm.name,
+        documentType: uploadForm.type,
+        visibility: uploadForm.visibility.toUpperCase().replaceAll('-', '_'),
+        mimeType: uploadForm.mimeType,
+        fileSize: Number(uploadForm.fileSize) || undefined,
+      }),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.error?.message || 'Failed to create project document');
+        }
+
+        setProjectDocuments((prev) => [payload.data, ...prev]);
+        setIsUploadModalOpen(false);
+        setUploadForm({
+          name: '',
+          type: 'OTHER',
+          visibility: 'all',
+          mimeType: 'application/pdf',
+          fileSize: '102400',
+        });
+      })
+      .catch((error) => {
+        setTimelineError(error instanceof Error ? error.message : 'Failed to create project document');
       });
-      setIsUploadModalOpen(false);
-      setUploadForm({ name: '', type: 'PDF' });
-    }
   };
 
   const confirmDeleteDocument = () => {
-    if (onUpdateProject && deleteDocumentId) {
-      onUpdateProject({
-        ...project,
-        documents: project.documents.filter(d => d.id !== deleteDocumentId)
+    if (!deleteDocumentId) return;
+
+    fetch(`http://localhost:5001/api/projects/${project.id}/documents/${deleteDocumentId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.error?.message || 'Failed to delete document');
+        }
+
+        setProjectDocuments((prev) => prev.filter((document) => document.id !== deleteDocumentId));
+        setDeleteDocumentId(null);
+      })
+      .catch((error) => {
+        setTimelineError(error instanceof Error ? error.message : 'Failed to delete document');
       });
-    }
-    setDeleteDocumentId(null);
   };
 
   const simulateDownload = (docId: string) => {
     setDownloadingDocs([...downloadingDocs, docId]);
-    setTimeout(() => {
-      setDownloadingDocs(prev => prev.filter(id => id !== docId));
-    }, 2000);
+    fetch(`http://localhost:5001/api/projects/${project.id}/documents/${docId}/download`, {
+      headers: getAuthHeaders(),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error?.message || 'Failed to download document');
+        }
+
+        return response.json();
+      })
+      .catch((error) => {
+        setTimelineError(error instanceof Error ? error.message : 'Failed to download document');
+      })
+      .finally(() => {
+        setTimeout(() => {
+          setDownloadingDocs((prev) => prev.filter((id) => id !== docId));
+        }, 800);
+      });
   };
 
   const handleCreateAssignment = async (e: FormEvent<HTMLFormElement>) => {
@@ -262,6 +394,61 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
       setAssignmentError(error instanceof Error ? error.message : 'Failed to create assignment');
     } finally {
       setIsSavingAssignment(false);
+    }
+  };
+
+  const handleStartEditLog = (log: ProjectTimelineLog) => {
+    setEditingLogId(log.id);
+    setEditingMessage(log.message);
+    setEditingVisibility(log.visibility);
+  };
+
+  const handleSaveLogEdit = async (logId: string) => {
+    try {
+      const response = await fetch(`http://localhost:5001/api/projects/${project.id}/timeline-logs/${logId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          message: editingMessage,
+          visibility: editingVisibility.toUpperCase().replaceAll('-', '_'),
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to update log');
+      }
+
+      setTimelineLogs((prev) => prev.map((log) => (log.id === logId ? payload.data : log)));
+      setEditingLogId(null);
+      setEditingMessage('');
+      setTimelineError('');
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : 'Failed to update log');
+    }
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    try {
+      const response = await fetch(`http://localhost:5001/api/projects/${project.id}/timeline-logs/${logId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to delete log');
+      }
+
+      setTimelineLogs((prev) => prev.filter((log) => log.id !== logId));
+      setTimelineError('');
+    } catch (error) {
+      setTimelineError(error instanceof Error ? error.message : 'Failed to delete log');
     }
   };
 
@@ -608,6 +795,11 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                     <MessageSquare size={18} className="text-indigo-500" />
                     Publish Site Update
                   </h4>
+                  {timelineError ? (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
+                      {timelineError}
+                    </div>
+                  ) : null}
                   <div className="flex gap-4">
                     <div className="flex-1 space-y-6">
                       <textarea 
@@ -662,7 +854,7 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                         );
                       })()}
 
-                      <div className="flex justify-between items-center gap-4 pt-4">
+                      <div className="grid gap-3 md:grid-cols-3 pt-4">
                         <select 
                           value={selectedStatus}
                           onChange={(e) => setSelectedStatus(e.target.value as ProjectStatus)}
@@ -673,6 +865,27 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                           <option value="completed">Set Completed</option>
                           <option value="on-hold">On Hold</option>
                         </select>
+                        <select
+                          value={logType}
+                          onChange={(e) => setLogType(e.target.value as ProjectTimelineLog['logType'])}
+                          className="bg-slate-100 border-none rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-tight text-slate-600 focus:outline-none"
+                        >
+                          <option value="comment">Comment</option>
+                          <option value="progress-update">Progress Update</option>
+                          <option value="status-update">Status Update</option>
+                          <option value="request">Request</option>
+                          <option value="note">Note</option>
+                        </select>
+                        <select
+                          value={logVisibility}
+                          onChange={(e) => setLogVisibility(e.target.value as ProjectTimelineLog['visibility'])}
+                          className="bg-slate-100 border-none rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-tight text-slate-600 focus:outline-none"
+                        >
+                          <option value="all">Visible To Client</option>
+                          <option value="team-only">Team Only</option>
+                        </select>
+                      </div>
+                      <div className="flex justify-end items-center gap-4">
                         <button 
                           onClick={handlePostUpdate}
                           disabled={isPostingUpdate || postUpdateSuccess}
@@ -695,32 +908,98 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
               )}
 
               <div className="space-y-6 relative before:absolute before:left-6 before:top-2 before:bottom-2 before:w-[1px] before:bg-slate-200">
-                {localProject.updates.map((update, i) => (
-                  <div key={update.id} className="relative pl-14">
+                {timelineLogs.length === 0 ? (
+                  <p className="pl-14 text-sm italic text-slate-500">No timeline entry yet.</p>
+                ) : null}
+                {timelineLogs.map((log) => {
+                  const canManageLog = canModify && (isAdmin || currentUser?.id === log.authorUserId);
+
+                  return (
+                  <div key={log.id} className="relative pl-14">
                     <div className="absolute left-[21px] top-1.5 w-2 h-2 rounded-full bg-indigo-600 border-2 border-white ring-4 ring-indigo-50"></div>
                     <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <p className="font-bold text-slate-900 text-sm tracking-tight">{update.authorName}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{update.date}</p>
+                          <p className="font-bold text-slate-900 text-sm tracking-tight">{log.authorName}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                            {new Date(log.createdAt).toLocaleDateString()}
+                          </p>
                         </div>
-                        {update.statusChange && (
-                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded">
-                            <CheckCircle2 size={10} /> State: {update.statusChange}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-600">
+                            {log.logType.replace('-', ' ')}
                           </span>
-                        )}
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1">
+                            {log.visibility === 'all' ? <Eye size={10} /> : <UsersIcon size={10} />}
+                            {log.visibility === 'all' ? 'All' : 'Team'}
+                          </span>
+                          {canManageLog ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditLog(log)}
+                                className="rounded bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 border border-slate-200 hover:text-indigo-600"
+                              >
+                                <span className="inline-flex items-center gap-1"><Pencil size={10} /> Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLog(log.id)}
+                                className="rounded bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-rose-600 border border-rose-200"
+                              >
+                                Delete
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
                       </div>
-                      <p className="text-slate-600 text-sm leading-relaxed">{update.content}</p>
+                      {editingLogId === log.id ? (
+                        <div className="space-y-3">
+                          <textarea
+                            value={editingMessage}
+                            onChange={(e) => setEditingMessage(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+                          />
+                          <div className="flex items-center justify-between gap-3">
+                            <select
+                              value={editingVisibility}
+                              onChange={(e) => setEditingVisibility(e.target.value as ProjectTimelineLog['visibility'])}
+                              className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-tight text-slate-600"
+                            >
+                              <option value="all">Visible To Client</option>
+                              <option value="team-only">Team Only</option>
+                            </select>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingLogId(null)}
+                                className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-widest text-slate-600"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveLogEdit(log.id)}
+                                className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold uppercase tracking-widest text-white"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-slate-600 text-sm leading-relaxed">{log.message}</p>
+                      )}
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           )}
 
           {activeTab === 'docs' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {project.documents.map((doc) => (
+              {projectDocuments.map((doc) => (
                 <div key={doc.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl group hover:border-indigo-300 transition-all">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0">
@@ -728,7 +1007,10 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                     </div>
                     <div>
                       <p className="text-sm font-bold text-slate-900 truncate max-w-[150px]">{doc.name}</p>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{doc.type} • {doc.size}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                        {doc.type} • {doc.size}
+                        {doc.visibility ? ` • ${doc.visibility === 'all' ? 'CLIENT' : 'TEAM'}` : ''}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -751,6 +1033,11 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                   </div>
                 </div>
               ))}
+              {projectDocuments.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm italic text-slate-500">
+                  No project documents available yet.
+                </div>
+              ) : null}
               {canModify && (
                 <div onClick={() => setIsUploadModalOpen(true)} className="flex items-center justify-center p-4 border border-dashed border-slate-200 rounded-xl text-slate-400 hover:border-indigo-300 hover:text-indigo-600 transition-all cursor-pointer bg-slate-50/50 group">
                   <span className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 group-hover:scale-105 transition-transform"><Plus size={16} /> Upload CAD Blueprint</span>
@@ -927,16 +1214,41 @@ export function ProjectDetails({ project, role, onBack, onUpdateProject, onDelet
                   onChange={(e) => setUploadForm({...uploadForm, type: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium uppercase tracking-wide"
                 >
-                  <option value="PDF">PDF Document</option>
-                  <option value="CAD">AutoCAD File (.cad)</option>
-                  <option value="XLSX">Spreadsheet (.xlsx)</option>
-                  <option value="IMG">Image (.png, .jpg)</option>
+                  <option value="CONTRACT">Contract</option>
+                  <option value="PLAN">Plan</option>
+                  <option value="REPORT">Report</option>
+                  <option value="SITE_PHOTO">Site Photo</option>
+                  <option value="INVOICE">Invoice</option>
+                  <option value="OTHER">Other</option>
                 </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Visibility</label>
+                  <select
+                    value={uploadForm.visibility}
+                    onChange={(e) => setUploadForm({...uploadForm, visibility: e.target.value as 'all' | 'team-only'})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium uppercase tracking-wide"
+                  >
+                    <option value="all">Visible To Client</option>
+                    <option value="team-only">Team Only</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Approx Size (bytes)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={uploadForm.fileSize}
+                    onChange={(e) => setUploadForm({...uploadForm, fileSize: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-medium"
+                  />
+                </div>
               </div>
               
               <div className="p-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center justify-center gap-2">
                 <Download size={24} className="text-slate-400" />
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Click or Drag file to simulate upload</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest text-center">Metadata-only upload for now</p>
               </div>
 
               <div className="pt-4 flex justify-end gap-3">

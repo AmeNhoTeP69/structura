@@ -437,6 +437,7 @@ export default function App() {
       if (project) {
         return <ProjectDetails 
                  project={project} 
+                 currentUser={currentUser}
                  role={role} 
                  onBack={() => setCurrentPage('dashboard')} 
                  onUpdateProject={handleUpdateProject}

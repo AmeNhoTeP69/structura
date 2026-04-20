@@ -17,6 +17,12 @@ const {
   deleteProjectAssignment,
   listProjectTimelineLogs,
   createProjectTimelineLog,
+  updateProjectTimelineLog,
+  deleteProjectTimelineLog,
+  listProjectDocuments,
+  createProjectDocument,
+  getProjectDocumentDownload,
+  deleteProjectDocument,
   deleteLegacyProject,
 } = require('../controllers/legacy.controller');
 const { authenticate } = require('../middlewares/authenticate');
@@ -69,6 +75,42 @@ legacyRouter.post(
   authenticate,
   authorizeRoles('EMPLOYEE', 'ADMIN'),
   createProjectTimelineLog,
+);
+legacyRouter.get(
+  '/projects/:id/documents',
+  authenticate,
+  authorizeRoles('CLIENT', 'EMPLOYEE', 'ADMIN'),
+  listProjectDocuments,
+);
+legacyRouter.post(
+  '/projects/:id/documents',
+  authenticate,
+  authorizeRoles('EMPLOYEE', 'ADMIN'),
+  createProjectDocument,
+);
+legacyRouter.get(
+  '/projects/:id/documents/:documentId/download',
+  authenticate,
+  authorizeRoles('CLIENT', 'EMPLOYEE', 'ADMIN'),
+  getProjectDocumentDownload,
+);
+legacyRouter.delete(
+  '/projects/:id/documents/:documentId',
+  authenticate,
+  authorizeRoles('EMPLOYEE', 'ADMIN'),
+  deleteProjectDocument,
+);
+legacyRouter.patch(
+  '/projects/:id/timeline-logs/:logId',
+  authenticate,
+  authorizeRoles('EMPLOYEE', 'ADMIN'),
+  updateProjectTimelineLog,
+);
+legacyRouter.delete(
+  '/projects/:id/timeline-logs/:logId',
+  authenticate,
+  authorizeRoles('EMPLOYEE', 'ADMIN'),
+  deleteProjectTimelineLog,
 );
 legacyRouter.post(
   '/project-requests/:id/transition-to-project',

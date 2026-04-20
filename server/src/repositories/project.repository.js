@@ -37,6 +37,45 @@ function toLegacyTimelineLog(log) {
   };
 }
 
+function formatFileSize(fileSize) {
+  if (!fileSize || Number.isNaN(Number(fileSize))) {
+    return 'Unknown';
+  }
+
+  const value = Number(fileSize);
+
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+
+  return `${value} B`;
+}
+
+function toLegacyProjectDocument(document) {
+  if (!document) return null;
+
+  return {
+    id: String(document.id),
+    name: document.fileName,
+    fileName: document.fileName,
+    filePath: document.filePath,
+    type: String(document.documentType || '').replaceAll('_', ' '),
+    mimeType: document.mimeType || undefined,
+    fileSize: document.fileSize ?? undefined,
+    size: formatFileSize(document.fileSize),
+    uploadDate: document.createdAt.toISOString().split('T')[0],
+    visibility: String(document.visibility || '').toLowerCase().replaceAll('_', '-'),
+    uploadedByName: document.uploadedByUser?.fullName || '',
+    sourceRequestDocumentId: document.sourceRequestDocumentId
+      ? String(document.sourceRequestDocumentId)
+      : null,
+  };
+}
+
 function toLegacyProjectUpdate(log) {
   if (!log) return null;
 
@@ -60,12 +99,25 @@ function filterVisibleTimelineLogs(timelineLogs, authUser) {
   return timelineLogs;
 }
 
+function filterVisibleDocuments(documents, authUser) {
+  if (!documents || documents.length === 0) {
+    return [];
+  }
+
+  if (!authUser || authUser.role === 'CLIENT') {
+    return documents.filter((document) => document.visibility === 'ALL');
+  }
+
+  return documents;
+}
+
 function toLegacyProject(project, authUser) {
   if (!project) return null;
 
   const mappedAssignments = (project.assignments || []).map(toLegacyAssignment);
   const leadAssignment = mappedAssignments.find((assignment) => assignment.isLead) || mappedAssignments[0] || null;
   const visibleTimelineLogs = filterVisibleTimelineLogs(project.timelineLogs || [], authUser);
+  const visibleDocuments = filterVisibleDocuments(project.documents || [], authUser);
 
   return {
     id: String(project.id),
@@ -83,7 +135,7 @@ function toLegacyProject(project, authUser) {
     budget: project.budget ? String(project.budget) : '',
     location: project.location,
     assignments: mappedAssignments,
-    documents: [],
+    documents: visibleDocuments.map(toLegacyProjectDocument),
     updates: visibleTimelineLogs.map(toLegacyProjectUpdate),
   };
 }
@@ -160,6 +212,15 @@ const projectInclude = {
   timelineLogs: {
     include: {
       authorUser: true,
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  },
+  documents: {
+    include: {
+      uploadedByUser: true,
+      sourceRequestDocument: true,
     },
     orderBy: {
       createdAt: 'desc',
@@ -645,6 +706,201 @@ async function createProjectTimelineLog(projectId, payload, authUser) {
   };
 }
 
+async function listProjectDocuments(projectId, authUser) {
+  const project = await prisma.project.findFirst({
+    where: buildProjectAccessWhere(projectId, authUser),
+    select: { id: true },
+  });
+
+  if (!project) {
+    return null;
+  }
+
+  const documents = await prisma.projectDocument.findMany({
+    where: {
+      projectId: Number(projectId),
+      ...((!authUser || authUser.role === 'CLIENT') ? { visibility: 'ALL' } : {}),
+    },
+    include: {
+      uploadedByUser: true,
+      sourceRequestDocument: true,
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+
+  return documents.map(toLegacyProjectDocument);
+}
+
+async function createProjectDocument(projectId, payload, authUser) {
+  const project = await prisma.project.findFirst({
+    where: buildProjectAccessWhere(projectId, authUser),
+    select: { id: true },
+  });
+
+  if (!project) {
+    return null;
+  }
+
+  const document = await prisma.projectDocument.create({
+    data: {
+      projectId: Number(projectId),
+      uploadedByUserId: Number(authUser.id),
+      documentType: String(payload.documentType || 'OTHER').toUpperCase().replaceAll('-', '_'),
+      fileName: payload.fileName,
+      filePath: payload.filePath || `/uploads/projects/${projectId}/${payload.fileName}`,
+      mimeType: payload.mimeType || null,
+      fileSize: payload.fileSize ? Number(payload.fileSize) : null,
+      visibility: String(payload.visibility || 'TEAM_ONLY').toUpperCase().replaceAll('-', '_'),
+    },
+    include: {
+      uploadedByUser: true,
+      sourceRequestDocument: true,
+    },
+  });
+
+  return toLegacyProjectDocument(document);
+}
+
+async function getProjectDocumentDownload(projectId, documentId, authUser) {
+  const project = await prisma.project.findFirst({
+    where: buildProjectAccessWhere(projectId, authUser),
+    select: { id: true },
+  });
+
+  if (!project) {
+    return null;
+  }
+
+  const document = await prisma.projectDocument.findFirst({
+    where: {
+      id: Number(documentId),
+      projectId: Number(projectId),
+      ...((!authUser || authUser.role === 'CLIENT') ? { visibility: 'ALL' } : {}),
+    },
+    include: {
+      uploadedByUser: true,
+      sourceRequestDocument: true,
+    },
+  });
+
+  if (!document) {
+    return null;
+  }
+
+  return toLegacyProjectDocument(document);
+}
+
+async function deleteProjectDocument(projectId, documentId, authUser) {
+  const project = await prisma.project.findFirst({
+    where: buildProjectAccessWhere(projectId, authUser),
+    select: { id: true },
+  });
+
+  if (!project) {
+    return null;
+  }
+
+  const document = await prisma.projectDocument.findFirst({
+    where: {
+      id: Number(documentId),
+      projectId: Number(projectId),
+    },
+    select: {
+      id: true,
+      uploadedByUserId: true,
+    },
+  });
+
+  if (!document) {
+    return false;
+  }
+
+  const canDelete = authUser?.role === 'ADMIN' || Number(authUser?.id) === document.uploadedByUserId;
+
+  if (!canDelete) {
+    return { error: 'FORBIDDEN' };
+  }
+
+  await prisma.projectDocument.delete({
+    where: { id: Number(documentId) },
+  });
+
+  return true;
+}
+
+async function updateProjectTimelineLog(projectId, logId, payload, authUser) {
+  const timelineLog = await prisma.projectTimelineLog.findFirst({
+    where: {
+      id: Number(logId),
+      projectId: Number(projectId),
+    },
+    include: {
+      authorUser: true,
+    },
+  });
+
+  if (!timelineLog) {
+    return null;
+  }
+
+  const canEdit = authUser?.role === 'ADMIN' || Number(authUser?.id) === timelineLog.authorUserId;
+
+  if (!canEdit) {
+    return { error: 'FORBIDDEN' };
+  }
+
+  const updatedLog = await prisma.projectTimelineLog.update({
+    where: { id: Number(logId) },
+    data: {
+      message: typeof payload.message === 'string' ? payload.message : undefined,
+      visibility:
+        typeof payload.visibility === 'string'
+          ? String(payload.visibility).toUpperCase().replaceAll('-', '_')
+          : undefined,
+      logType:
+        typeof payload.logType === 'string'
+          ? String(payload.logType).toUpperCase().replaceAll('-', '_')
+          : undefined,
+    },
+    include: {
+      authorUser: true,
+    },
+  });
+
+  return toLegacyTimelineLog(updatedLog);
+}
+
+async function deleteProjectTimelineLog(projectId, logId, authUser) {
+  const timelineLog = await prisma.projectTimelineLog.findFirst({
+    where: {
+      id: Number(logId),
+      projectId: Number(projectId),
+    },
+    select: {
+      id: true,
+      authorUserId: true,
+    },
+  });
+
+  if (!timelineLog) {
+    return null;
+  }
+
+  const canDelete = authUser?.role === 'ADMIN' || Number(authUser?.id) === timelineLog.authorUserId;
+
+  if (!canDelete) {
+    return { error: 'FORBIDDEN' };
+  }
+
+  await prisma.projectTimelineLog.delete({
+    where: { id: Number(logId) },
+  });
+
+  return true;
+}
+
 async function deleteProject(id) {
   await prisma.project.delete({
     where: { id: Number(id) },
@@ -663,5 +919,11 @@ module.exports = {
   deleteProjectAssignment,
   listProjectTimelineLogs,
   createProjectTimelineLog,
+  updateProjectTimelineLog,
+  deleteProjectTimelineLog,
+  listProjectDocuments,
+  createProjectDocument,
+  getProjectDocumentDownload,
+  deleteProjectDocument,
   deleteProject,
 };

@@ -83,6 +83,13 @@ export interface ProjectDocument {
   type: string;
   size: string;
   uploadDate: string;
+  visibility?: 'all' | 'team-only';
+  fileName?: string;
+  filePath?: string;
+  mimeType?: string;
+  fileSize?: number;
+  uploadedByName?: string;
+  sourceRequestDocumentId?: string | null;
 }
 
 export interface Stat {

@@ -20,6 +20,12 @@ const {
   deleteProjectAssignmentService,
   listProjectTimelineLogsService,
   createProjectTimelineLogService,
+  updateProjectTimelineLogService,
+  deleteProjectTimelineLogService,
+  listProjectDocumentsService,
+  createProjectDocumentService,
+  getProjectDocumentDownloadService,
+  deleteProjectDocumentService,
   deleteProjectService,
 } = require('../services/project.service');
 
@@ -271,6 +277,119 @@ async function createProjectTimelineLog(req, res, next) {
   }
 }
 
+async function updateProjectTimelineLog(req, res, next) {
+  try {
+    const timelineLog = await updateProjectTimelineLogService(
+      req.params.id,
+      req.params.logId,
+      req.body,
+      req.auth?.user,
+    );
+
+    if (!timelineLog) {
+      return next(createHttpError(404, 'Timeline log not found'));
+    }
+
+    if (timelineLog.error === 'FORBIDDEN') {
+      return next(createHttpError(403, 'You cannot edit this timeline log', 'FORBIDDEN'));
+    }
+
+    return sendSuccess(res, timelineLog);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function deleteProjectTimelineLog(req, res, next) {
+  try {
+    const deleted = await deleteProjectTimelineLogService(
+      req.params.id,
+      req.params.logId,
+      req.auth?.user,
+    );
+
+    if (!deleted) {
+      return next(createHttpError(404, 'Timeline log not found'));
+    }
+
+    if (deleted.error === 'FORBIDDEN') {
+      return next(createHttpError(403, 'You cannot delete this timeline log', 'FORBIDDEN'));
+    }
+
+    return sendSuccess(res, { deleted: true });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function listProjectDocuments(req, res, next) {
+  try {
+    const documents = await listProjectDocumentsService(req.params.id, req.auth?.user);
+
+    if (!documents) {
+      return next(createHttpError(404, 'Project not found'));
+    }
+
+    return sendSuccess(res, documents);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function createProjectDocument(req, res, next) {
+  try {
+    const document = await createProjectDocumentService(req.params.id, req.body, req.auth?.user);
+
+    if (!document) {
+      return next(createHttpError(404, 'Project not found'));
+    }
+
+    return sendSuccess(res, document, 201);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function getProjectDocumentDownload(req, res, next) {
+  try {
+    const document = await getProjectDocumentDownloadService(
+      req.params.id,
+      req.params.documentId,
+      req.auth?.user,
+    );
+
+    if (!document) {
+      return next(createHttpError(404, 'Project document not found'));
+    }
+
+    return sendSuccess(res, document);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function deleteProjectDocument(req, res, next) {
+  try {
+    const deleted = await deleteProjectDocumentService(
+      req.params.id,
+      req.params.documentId,
+      req.auth?.user,
+    );
+
+    if (!deleted) {
+      return next(createHttpError(404, 'Project document not found'));
+    }
+
+    if (deleted.error === 'FORBIDDEN') {
+      return next(createHttpError(403, 'You cannot delete this project document', 'FORBIDDEN'));
+    }
+
+    return sendSuccess(res, { deleted: true });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   listUsers,
   loginUser,
@@ -288,5 +407,11 @@ module.exports = {
   deleteProjectAssignment,
   listProjectTimelineLogs,
   createProjectTimelineLog,
+  updateProjectTimelineLog,
+  deleteProjectTimelineLog,
+  listProjectDocuments,
+  createProjectDocument,
+  getProjectDocumentDownload,
+  deleteProjectDocument,
   deleteLegacyProject,
 };

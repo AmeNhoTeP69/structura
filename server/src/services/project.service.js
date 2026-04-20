@@ -44,6 +44,30 @@ async function createProjectTimelineLogService(projectId, payload, authUser) {
   return projectRepository.createProjectTimelineLog(projectId, payload, authUser);
 }
 
+async function updateProjectTimelineLogService(projectId, logId, payload, authUser) {
+  return projectRepository.updateProjectTimelineLog(projectId, logId, payload, authUser);
+}
+
+async function deleteProjectTimelineLogService(projectId, logId, authUser) {
+  return projectRepository.deleteProjectTimelineLog(projectId, logId, authUser);
+}
+
+async function listProjectDocumentsService(projectId, authUser) {
+  return projectRepository.listProjectDocuments(projectId, authUser);
+}
+
+async function createProjectDocumentService(projectId, payload, authUser) {
+  return projectRepository.createProjectDocument(projectId, payload, authUser);
+}
+
+async function getProjectDocumentDownloadService(projectId, documentId, authUser) {
+  return projectRepository.getProjectDocumentDownload(projectId, documentId, authUser);
+}
+
+async function deleteProjectDocumentService(projectId, documentId, authUser) {
+  return projectRepository.deleteProjectDocument(projectId, documentId, authUser);
+}
+
 async function deleteProjectService(id) {
   return projectRepository.deleteProject(id);
 }
@@ -60,5 +84,11 @@ module.exports = {
   deleteProjectAssignmentService,
   listProjectTimelineLogsService,
   createProjectTimelineLogService,
+  updateProjectTimelineLogService,
+  deleteProjectTimelineLogService,
+  listProjectDocumentsService,
+  createProjectDocumentService,
+  getProjectDocumentDownloadService,
+  deleteProjectDocumentService,
   deleteProjectService,
 };
