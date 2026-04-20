@@ -9,14 +9,26 @@ const {
   changeCurrentUserPassword,
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middlewares/authenticate');
+const {
+  validateRequest,
+  validateLoginBody,
+  validateRegisterClientBody,
+  validateUpdateCurrentUserBody,
+  validateChangePasswordBody,
+} = require('../middlewares/request-validation');
 
 const authRouter = Router();
 
-authRouter.post('/login', login);
+authRouter.post('/login', validateRequest(validateLoginBody), login);
 authRouter.post('/logout', logout);
-authRouter.post('/register/client', registerClient);
+authRouter.post('/register/client', validateRequest(validateRegisterClientBody), registerClient);
 authRouter.get('/me', authenticate, getCurrentUser);
-authRouter.put('/me', authenticate, updateCurrentUser);
-authRouter.patch('/me/password', authenticate, changeCurrentUserPassword);
+authRouter.put('/me', authenticate, validateRequest(validateUpdateCurrentUserBody), updateCurrentUser);
+authRouter.patch(
+  '/me/password',
+  authenticate,
+  validateRequest(validateChangePasswordBody),
+  changeCurrentUserPassword,
+);
 
 module.exports = { authRouter };

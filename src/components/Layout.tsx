@@ -18,7 +18,7 @@ import {
   ChevronRight,
   FolderClock
 } from 'lucide-react';
-import { UserRole, User, Project } from '../types';
+import { UserRole, User, Project, NotificationItem } from '../types';
 import { useState, useRef, useEffect } from 'react';
 
 interface LayoutProps {
@@ -28,17 +28,32 @@ interface LayoutProps {
   currentPage: string;
   basketCount?: number;
   projects?: Project[];
+  notifications?: NotificationItem[];
   onNavigate: (page: string) => void;
+  onMarkNotificationRead?: (id: string) => void;
+  onMarkAllNotificationsRead?: () => void;
+  onDeleteNotification?: (id: string) => void;
   onLogout: () => void;
 }
 
-export function Layout({ children, role, user, currentPage, basketCount = 0, projects = [], onNavigate, onLogout }: LayoutProps) {
+export function Layout({
+  children,
+  role,
+  user,
+  currentPage,
+  basketCount = 0,
+  projects = [],
+  notifications = [],
+  onNavigate,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onDeleteNotification,
+  onLogout,
+}: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  
-  // Extract recent updates for client
-  const clientProjects = role === 'client' && user ? projects.filter(p => p.clientId === user.id) : [];
-  const allUpdates = clientProjects.flatMap(p => p.updates.map(u => ({ ...u, projectName: p.title }))).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+  const unreadNotifications = notifications.filter((item) => !item.isRead);
+  const previewNotifications = notifications.slice(0, 5);
 
   const navigation = {
     visitor: [
@@ -55,10 +70,12 @@ export function Layout({ children, role, user, currentPage, basketCount = 0, pro
       { name: `Project Basket${basketCount ? ` (${basketCount})` : ''}`, icon: Briefcase, id: 'basket' },
       { name: 'New Request', icon: Construction, id: 'new-request' },
       { name: 'My Requests', icon: FolderClock, id: 'requests' },
+      { name: 'Notifications', icon: Bell, id: 'notifications' },
       { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
     employee: [
       { name: 'Dashboard', icon: LayoutDashboard, id: 'dashboard' },
+      { name: 'Notifications', icon: Bell, id: 'notifications' },
       { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
     admin: [
@@ -66,6 +83,8 @@ export function Layout({ children, role, user, currentPage, basketCount = 0, pro
       { name: 'Project Requests', icon: FolderClock, id: 'admin-project-requests' },
       { name: 'Team Management', icon: Users, id: 'users' },
       { name: 'Project Control', icon: Briefcase, id: 'projects' },
+      { name: 'Site Content', icon: Settings, id: 'site-content' },
+      { name: 'Notifications', icon: Bell, id: 'notifications' },
       { name: 'Profile', icon: UserIcon, id: 'profile' },
     ],
   };
@@ -144,37 +163,90 @@ export function Layout({ children, role, user, currentPage, basketCount = 0, pro
           </div>
 
           <div className="flex items-center gap-4">
-            {role === 'client' && (
+            {role !== 'visitor' && (
               <div className="relative">
                 <button 
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={`p-2 rounded-lg relative transition-colors ${isNotificationsOpen ? 'bg-indigo-50 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}
                 >
                   <Bell size={20} />
-                  {allUpdates.length > 0 && (
+                  {unreadNotifications.length > 0 && (
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-indigo-500 rounded-full border-2 border-white"></span>
                   )}
                 </button>
                 
                 {isNotificationsOpen && (
                   <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-slate-200 shadow-xl shadow-slate-200/50 rounded-2xl overflow-hidden z-50">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50">
-                      <h4 className="font-bold text-slate-900 text-sm uppercase tracking-tight">Recent Project Updates</h4>
+                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-sm uppercase tracking-tight">Notifications</h4>
+                        <p className="text-[11px] text-slate-500 mt-1">{unreadNotifications.length} unread</p>
+                      </div>
+                      {unreadNotifications.length > 0 && onMarkAllNotificationsRead ? (
+                        <button
+                          onClick={() => onMarkAllNotificationsRead()}
+                          className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          Mark all read
+                        </button>
+                      ) : null}
                     </div>
                     <div className="max-h-80 overflow-y-auto">
-                      {allUpdates.length === 0 ? (
-                        <div className="p-6 text-center text-sm text-slate-500">No updates yet.</div>
+                      {previewNotifications.length === 0 ? (
+                        <div className="p-6 text-center text-sm text-slate-500">No notifications yet.</div>
                       ) : (
-                        allUpdates.map((update, idx) => (
-                          <div key={idx} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">{update.projectName}</span>
-                              <span className="text-[10px] font-medium text-slate-400">{update.date}</span>
+                        previewNotifications.map((notification) => (
+                          <div key={notification.id} className={`p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${notification.isRead ? '' : 'bg-indigo-50/40'}`}>
+                            <div className="flex justify-between items-start gap-3 mb-1">
+                              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">{notification.type.replaceAll('-', ' ')}</span>
+                              <span className="text-[10px] font-medium text-slate-400">{new Date(notification.createdAt).toLocaleDateString()}</span>
                             </div>
-                            <p className="text-sm text-slate-700 font-medium">{update.content}</p>
+                            <p className="text-sm text-slate-900 font-semibold">{notification.title}</p>
+                            <p className="text-sm text-slate-600 mt-1">{notification.message}</p>
+                            <div className="mt-3 flex items-center gap-3">
+                              {!notification.isRead && onMarkNotificationRead ? (
+                                <button
+                                  onClick={() => onMarkNotificationRead(notification.id)}
+                                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                                >
+                                  Mark read
+                                </button>
+                              ) : null}
+                              {onDeleteNotification ? (
+                                <button
+                                  onClick={() => onDeleteNotification(notification.id)}
+                                  className="text-[11px] font-semibold text-slate-500 hover:text-red-600"
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                              <button
+                                onClick={() => {
+                                  if (!notification.isRead && onMarkNotificationRead) {
+                                    onMarkNotificationRead(notification.id);
+                                  }
+                                  setIsNotificationsOpen(false);
+                                  onNavigate('notifications');
+                                }}
+                                className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                              >
+                                View
+                              </button>
+                            </div>
                           </div>
                         ))
                       )}
+                    </div>
+                    <div className="p-3 border-t border-slate-100 bg-white">
+                      <button
+                        onClick={() => {
+                          setIsNotificationsOpen(false);
+                          onNavigate('notifications');
+                        }}
+                        className="w-full rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+                      >
+                        Open notifications center
+                      </button>
                     </div>
                   </div>
                 )}

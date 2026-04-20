@@ -1,4 +1,8 @@
 const serviceRepository = require('../repositories/service.repository');
+const {
+  getHomeContentService,
+  getPublicSettingsService,
+} = require('./site-content.service');
 
 function mapService(service) {
   return {
@@ -41,27 +45,6 @@ async function listPublicServiceCategoriesService() {
     name: category.name,
     slug: category.slug,
   }));
-}
-
-function getHomeContentService() {
-  return {
-    heroTitle: 'Engineering the Future of Infrastructure.',
-    heroHighlight: 'Future',
-    heroDescription:
-      'Structura delivers world-class engineering, interior design, and site planning services tailored for modern residential and commercial projects.',
-    heroPrimaryCta: 'Start Your Project',
-    heroSecondaryCta: 'Explore Services',
-    trustTitle: 'Trusted by 200+ Global Enterprise Partners',
-    partners: ['CONSTRUCTO', 'METRO-LINK', 'GLOBALBUILD', 'INDUS-CORP'],
-  };
-}
-
-function getPublicSettingsService() {
-  return {
-    companyName: 'Structura',
-    supportEmail: 'projects@structura.engineering',
-    supportPhone: '+1 (555) 234-5678',
-  };
 }
 
 module.exports = {

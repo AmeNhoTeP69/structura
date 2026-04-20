@@ -1,5 +1,6 @@
 const projectRequestRepository = require('../repositories/project-request.repository');
 const { createHttpError } = require('../utils/http-error');
+const { createNotificationForUser, notifyAdmins } = require('./notification.service');
 
 function normalizeStatus(status) {
   if (!status) return 'DRAFT';
@@ -188,6 +189,16 @@ async function createClientProjectRequestService(clientId, payload) {
     },
   });
 
+  if (status === 'SUBMITTED') {
+    await notifyAdmins({
+      type: 'PROJECT_REQUEST_SUBMITTED',
+      title: 'New project request',
+      message: `${projectRequest.client?.fullName || 'A client'} submitted ${projectRequest.referenceCode}.`,
+      relatedEntityType: 'PROJECT_REQUEST',
+      relatedEntityId: projectRequest.id,
+    });
+  }
+
   return toPublicProjectRequest(projectRequest);
 }
 
@@ -261,6 +272,14 @@ async function submitClientProjectRequestService(clientId, requestId) {
     },
   });
 
+  await notifyAdmins({
+    type: 'PROJECT_REQUEST_SUBMITTED',
+    title: 'New project request',
+    message: `${projectRequest.client?.fullName || 'A client'} submitted ${projectRequest.referenceCode}.`,
+    relatedEntityType: 'PROJECT_REQUEST',
+    relatedEntityId: projectRequest.id,
+  });
+
   return toPublicProjectRequest(projectRequest);
 }
 
@@ -304,6 +323,14 @@ async function respondToClientProjectRequestService(clientId, requestId, payload
         comment,
       },
     },
+  });
+
+  await notifyAdmins({
+    type: action === 'accept' ? 'PROJECT_REQUEST_ACCEPTED' : 'PROJECT_REQUEST_REFUSED',
+    title: action === 'accept' ? 'Proposal accepted by client' : 'Proposal refused by client',
+    message: `${projectRequest.client?.fullName || 'Client'} ${action}ed the proposal for ${projectRequest.referenceCode}.`,
+    relatedEntityType: 'PROJECT_REQUEST',
+    relatedEntityId: projectRequest.id,
   });
 
   return toPublicProjectRequest(projectRequest);
@@ -364,6 +391,41 @@ async function updateAdminProjectRequestService(adminUserId, requestId, payload 
   }
 
   const projectRequest = await projectRequestRepository.updateProjectRequest(requestId, updateData);
+
+  const clientMessages = [];
+
+  if (nextStatus !== existing.status) {
+    clientMessages.push(`status changed to ${String(nextStatus).toLowerCase().replaceAll('_', '-')}`);
+  }
+
+  if (payload.adminProposedBudget !== undefined) {
+    clientMessages.push('budget proposal updated');
+  }
+
+  if (payload.adminProposedStartDate !== undefined) {
+    clientMessages.push('start date proposal updated');
+  }
+
+  if (payload.adminReviewNote !== undefined && payload.adminReviewNote?.trim()) {
+    clientMessages.push('review note added');
+  }
+
+  if (clientMessages.length > 0) {
+    await createNotificationForUser(projectRequest.clientId, {
+      type:
+        nextStatus === 'WAITING_CLIENT_ACCEPTANCE'
+          ? 'REQUEST_PROPOSAL_RECEIVED'
+          : 'PROJECT_REQUEST_UPDATED',
+      title:
+        nextStatus === 'WAITING_CLIENT_ACCEPTANCE'
+          ? 'Admin proposal ready'
+          : 'Project request updated',
+      message: `Request ${projectRequest.referenceCode}: ${clientMessages.join(', ')}.`,
+      relatedEntityType: 'PROJECT_REQUEST',
+      relatedEntityId: projectRequest.id,
+    });
+  }
+
   return toPublicProjectRequest(projectRequest);
 }
 

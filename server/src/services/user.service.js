@@ -70,6 +70,14 @@ async function registerClientService({ name, email, password, phone }) {
 }
 
 async function updateCurrentUserService(userId, updates) {
+  if (updates.email) {
+    const existingUser = await userRepository.findUserByEmail(updates.email);
+
+    if (existingUser && Number(existingUser.id) !== Number(userId)) {
+      throw createHttpError(409, 'Email already in use', 'EMAIL_CONFLICT');
+    }
+  }
+
   const allowedUpdates = {
     name: updates.name,
     fullName: updates.fullName,

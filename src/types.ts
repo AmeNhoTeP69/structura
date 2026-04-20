@@ -77,6 +77,17 @@ export interface ProjectTimelineLog {
   createdAt: string;
 }
 
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  relatedEntityType?: string | null;
+  relatedEntityId?: string | null;
+  createdAt: string;
+}
+
 export interface ProjectDocument {
   id: string;
   name: string;

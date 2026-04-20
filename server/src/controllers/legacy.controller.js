@@ -28,6 +28,7 @@ const {
   deleteProjectDocumentService,
   deleteProjectService,
 } = require('../services/project.service');
+const { createNotificationForUser, notifyAdmins } = require('../services/notification.service');
 
 async function listUsers(_req, res, next) {
   try {
@@ -134,6 +135,14 @@ async function transitionProjectRequestToProject(req, res, next) {
       );
     }
 
+    await createNotificationForUser(project.clientId, {
+      type: 'PROJECT_CREATED',
+      title: 'Project created',
+      message: `Your request has been converted into project ${project.title}.`,
+      relatedEntityType: 'PROJECT',
+      relatedEntityId: project.id,
+    });
+
     return sendSuccess(res, project, 201);
   } catch (error) {
     return next(error);
@@ -152,6 +161,16 @@ async function updateLegacyProject(req, res, next) {
 
     if (!project) {
       return next(createHttpError(404, 'Project not found'));
+    }
+
+    if (existingProject.status !== project.status) {
+      await createNotificationForUser(project.clientId, {
+        type: 'PROJECT_STATUS_CHANGED',
+        title: 'Project status updated',
+        message: `${project.title} moved to ${project.status.replaceAll('-', ' ')}.`,
+        relatedEntityType: 'PROJECT',
+        relatedEntityId: project.id,
+      });
     }
 
     return sendSuccess(res, project);
@@ -202,6 +221,14 @@ async function createProjectAssignment(req, res, next) {
     if (assignment.error === 'ASSIGNMENT_ALREADY_EXISTS') {
       return next(createHttpError(400, 'Employee is already assigned to this project', 'ASSIGNMENT_ALREADY_EXISTS'));
     }
+
+    await createNotificationForUser(assignment.employeeUserId, {
+      type: 'PROJECT_ASSIGNED',
+      title: 'New project assignment',
+      message: `You were assigned to project #${req.params.id}${assignment.assignmentRole ? ` as ${assignment.assignmentRole}` : ''}.`,
+      relatedEntityType: 'PROJECT',
+      relatedEntityId: req.params.id,
+    });
 
     return sendSuccess(res, assignment, 201);
   } catch (error) {
@@ -269,6 +296,50 @@ async function createProjectTimelineLog(req, res, next) {
 
     if (!result) {
       return next(createHttpError(404, 'Project not found'));
+    }
+
+    const project = await getProjectByIdService(req.params.id, req.auth?.user);
+
+    if (project && result.visibility === 'all' && req.auth?.user?.id !== project.clientId) {
+      await createNotificationForUser(project.clientId, {
+        type: 'PROJECT_TIMELINE_UPDATED',
+        title: 'New project update',
+        message: `${result.authorName || 'Team'} posted a visible update on ${project.title}.`,
+        relatedEntityType: 'PROJECT',
+        relatedEntityId: project.id,
+      });
+    }
+
+    if (project?.assignments?.length) {
+      const recipientIds = project.assignments
+        .map((assignment) => assignment.employeeUserId)
+        .filter((employeeUserId, index, array) =>
+          employeeUserId &&
+          employeeUserId !== req.auth?.user?.id &&
+          array.indexOf(employeeUserId) === index,
+        );
+
+      await Promise.all(
+        recipientIds.map((employeeUserId) =>
+          createNotificationForUser(employeeUserId, {
+            type: 'PROJECT_ACTIVITY',
+            title: 'New project activity',
+            message: `${result.authorName || 'Team'} added a ${result.logType} on ${project.title}.`,
+            relatedEntityType: 'PROJECT',
+            relatedEntityId: project.id,
+          }),
+        ),
+      );
+    }
+
+    if (project && req.auth?.user?.role === 'employee') {
+      await notifyAdmins({
+        type: 'PROJECT_ACTIVITY',
+        title: 'Project activity',
+        message: `${result.authorName || 'An employee'} added a ${result.logType} on ${project.title}.`,
+        relatedEntityType: 'PROJECT',
+        relatedEntityId: project.id,
+      });
     }
 
     return sendSuccess(res, result, 201);
@@ -342,6 +413,18 @@ async function createProjectDocument(req, res, next) {
 
     if (!document) {
       return next(createHttpError(404, 'Project not found'));
+    }
+
+    const project = await getProjectByIdService(req.params.id, req.auth?.user);
+
+    if (project && document.visibility === 'all' && req.auth?.user?.id !== project.clientId) {
+      await createNotificationForUser(project.clientId, {
+        type: 'PROJECT_DOCUMENT_ADDED',
+        title: 'New project document',
+        message: `${document.name} was added to ${project.title}.`,
+        relatedEntityType: 'PROJECT',
+        relatedEntityId: project.id,
+      });
     }
 
     return sendSuccess(res, document, 201);

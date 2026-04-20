@@ -9,6 +9,7 @@
     "db:create": "node -r dotenv/config scripts/create-database.js",
     "db:seed": "node -r dotenv/config scripts/seed-from-json.js",
     "db:seed:services": "node -r dotenv/config scripts/seed-services.js",
+    "qa:smoke": "node scripts/smoke-test.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

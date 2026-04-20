@@ -12,7 +12,7 @@ const { createContactMessageService } = require('../services/contact-message.ser
 
 async function getHomeContent(_req, res, next) {
   try {
-    return sendSuccess(res, getHomeContentService());
+    return sendSuccess(res, await getHomeContentService());
   } catch (error) {
     return next(error);
   }
@@ -20,7 +20,7 @@ async function getHomeContent(_req, res, next) {
 
 async function getSettings(_req, res, next) {
   try {
-    return sendSuccess(res, getPublicSettingsService());
+    return sendSuccess(res, await getPublicSettingsService());
   } catch (error) {
     return next(error);
   }
@@ -28,7 +28,7 @@ async function getSettings(_req, res, next) {
 
 async function getContactSettings(_req, res, next) {
   try {
-    const settings = getPublicSettingsService();
+    const settings = await getPublicSettingsService();
     return sendSuccess(res, {
       email: settings.supportEmail,
       phone: settings.supportPhone,

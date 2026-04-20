@@ -163,7 +163,7 @@ export function AdminDashboard({ users, projects, projectRequests, onNavigate }:
             { label: 'Review Requests', icon: FolderClock, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('admin-project-requests') },
             { label: 'Add New Client', icon: Users, color: 'bg-emerald-50 text-emerald-600', action: () => onNavigate('users') },
             { label: 'Create Project', icon: Projector, color: 'bg-indigo-50 text-indigo-600', action: () => onNavigate('projects') },
-            { label: 'Financial Audit', icon: Landmark, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('dashboard') },
+            { label: 'Public Content', icon: Landmark, color: 'bg-amber-50 text-amber-600', action: () => onNavigate('site-content') },
           ].map((action, i) => (
             <button key={i} onClick={action.action} className="w-full p-4 bg-white border border-slate-200 rounded-2xl flex items-center gap-4 hover:border-slate-300 transition-all text-left shadow-sm group">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${action.color} group-hover:scale-110 transition-transform`}>

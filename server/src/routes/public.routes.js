@@ -10,6 +10,10 @@ const {
   listServiceCategories,
   createContactMessage,
 } = require('../controllers/public.controller');
+const {
+  validateRequest,
+  validateContactMessageBody,
+} = require('../middlewares/request-validation');
 
 const publicRouter = Router();
 
@@ -20,6 +24,6 @@ publicRouter.get('/services', listPublicServices);
 publicRouter.get('/services/featured', listFeaturedServices);
 publicRouter.get('/services/:serviceId', getPublicService);
 publicRouter.get('/service-categories', listServiceCategories);
-publicRouter.post('/contact-messages', createContactMessage);
+publicRouter.post('/contact-messages', validateRequest(validateContactMessageBody), createContactMessage);
 
 module.exports = { publicRouter };

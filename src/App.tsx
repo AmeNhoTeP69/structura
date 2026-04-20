@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserRole, User, Project, ProjectRequest } from './types';
+import { UserRole, User, Project, ProjectRequest, NotificationItem } from './types';
 import { mockUsers, mockProjects } from './mockData';
 import { Layout } from './components/Layout';
 import { VisitorHome } from './components/visitor/VisitorHome';
@@ -10,6 +10,7 @@ import { ProjectBasketPage } from './components/ProjectBasketPage';
 import { LoginPage } from './components/auth/LoginPage';
 import { RegisterPage } from './components/auth/RegisterPage';
 import { ProfilePage } from './components/auth/ProfilePage';
+import { NotificationsPage } from './components/NotificationsPage';
 import { ClientDashboard } from './components/client/ClientDashboard';
 import { CreateProjectRequestPage } from './components/client/CreateProjectRequestPage';
 import { ProjectRequestsPage } from './components/client/ProjectRequestsPage';
@@ -22,6 +23,7 @@ import { AdminProjectRequestsPage } from './components/admin/AdminProjectRequest
 import { AdminProjectRequestDetailsPage } from './components/admin/AdminProjectRequestDetailsPage';
 import { UserManagement } from './components/admin/UserManagement';
 import { ProjectManagement } from './components/admin/ProjectManagement';
+import { SiteContentManagement } from './components/admin/SiteContentManagement';
 import { clearAuthToken, clearStoredUser, getAuthHeaders, getAuthToken, getStoredUser, setAuthToken, setStoredUser } from './lib/auth';
 import { addServiceToProjectBasket, clearProjectBasket, getProjectBasket, removeServiceFromProjectBasket } from './lib/project-basket';
 import { PublicService } from './types/public';
@@ -44,7 +46,30 @@ export default function App() {
   const [users, setUsers] = useState<User[]>(mockUsers);
   const [projects, setProjects] = useState<Project[]>(mockProjects);
   const [projectRequests, setProjectRequests] = useState<ProjectRequest[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [projectBasket, setProjectBasket] = useState<PublicService[]>(() => getProjectBasket());
+
+  const loadNotifications = async () => {
+    if (!getAuthToken()) {
+      setNotifications([]);
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5001/api/notifications?limit=20', {
+        headers: getAuthHeaders(),
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to load notifications');
+      }
+
+      setNotifications(payload?.data || []);
+    } catch (error) {
+      console.error('Could not load notifications from backend.', error);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser || currentUser.role !== 'admin') {
@@ -115,6 +140,23 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
+
+    loadNotifications();
+
+    const intervalId = window.setInterval(() => {
+      loadNotifications();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
     const token = getAuthToken();
 
     if (!token) {
@@ -173,6 +215,7 @@ export default function App() {
     setCurrentUser(null);
     clearAuthToken();
     clearStoredUser();
+    setNotifications([]);
     setCurrentPage('home');
     localStorage.setItem('structura_page', 'home');
     setSelectedProjectId(null);
@@ -203,6 +246,7 @@ export default function App() {
       console.warn("Backend off, updating locally");
     }
     setProjects(projects.map(p => p.id === updatedProject.id ? updatedProject : p));
+    loadNotifications();
   };
 
   const handleDeleteProject = async (projectId: string) => {
@@ -215,6 +259,7 @@ export default function App() {
       console.warn("Backend off, deleting locally");
     }
     setProjects(projects.filter(p => p.id !== projectId));
+    loadNotifications();
   };
 
   const handleNavigate = (page: string, projectId?: string) => {
@@ -324,6 +369,7 @@ export default function App() {
     setProjectRequests((prev) =>
       prev.map((item) => (item.id === nextRequest.id ? nextRequest : item)),
     );
+    loadNotifications();
   };
 
   const handleAdminUpdateProjectRequest = async (
@@ -355,6 +401,7 @@ export default function App() {
     setProjectRequests((prev) =>
       prev.map((item) => (item.id === nextRequest.id ? nextRequest : item)),
     );
+    loadNotifications();
   };
 
   const handleTransitionProjectRequestToProject = async (requestId: string) => {
@@ -381,6 +428,42 @@ export default function App() {
     );
     setSelectedProjectId(project.id);
     setCurrentPage('projects');
+    loadNotifications();
+  };
+
+  const handleMarkNotificationRead = async (notificationId: string) => {
+    const response = await fetch(`http://localhost:5001/api/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+
+    if (response.ok) {
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item)),
+      );
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    const response = await fetch('http://localhost:5001/api/notifications/read-all', {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+
+    if (response.ok) {
+      setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+    }
+  };
+
+  const handleDeleteNotification = async (notificationId: string) => {
+    const response = await fetch(`http://localhost:5001/api/notifications/${notificationId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+
+    if (response.ok) {
+      setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
+    }
   };
 
   const renderContent = () => {
@@ -536,6 +619,15 @@ export default function App() {
               onNavigate={handleNavigate}
             />
           );
+        case 'notifications':
+          return (
+            <NotificationsPage
+              notifications={notifications}
+              onMarkRead={handleMarkNotificationRead}
+              onMarkAllRead={handleMarkAllNotificationsRead}
+              onDelete={handleDeleteNotification}
+            />
+          );
         default:
           return (
             <ClientDashboard
@@ -553,6 +645,15 @@ export default function App() {
     if (role === 'employee') {
       switch (currentPage) {
         case 'profile': return currentUser ? <ProfilePage currentUser={currentUser} onUserUpdated={handleUserUpdated} /> : null;
+        case 'notifications':
+          return (
+            <NotificationsPage
+              notifications={notifications}
+              onMarkRead={handleMarkNotificationRead}
+              onMarkAllRead={handleMarkAllNotificationsRead}
+              onDelete={handleDeleteNotification}
+            />
+          );
         case 'dashboard': return <EmployeeDashboard currentUser={currentUser} projects={projects} onSelectProject={(id) => handleNavigate('project-details', id)} onUpdateProject={(id) => handleNavigate('project-update', id)} />;
         default: return <EmployeeDashboard currentUser={currentUser} projects={projects} onSelectProject={(id) => handleNavigate('project-details', id)} onUpdateProject={(id) => handleNavigate('project-update', id)} />;
       }
@@ -561,6 +662,15 @@ export default function App() {
     if (role === 'admin') {
       switch (currentPage) {
         case 'profile': return currentUser ? <ProfilePage currentUser={currentUser} onUserUpdated={handleUserUpdated} /> : null;
+        case 'notifications':
+          return (
+            <NotificationsPage
+              notifications={notifications}
+              onMarkRead={handleMarkNotificationRead}
+              onMarkAllRead={handleMarkAllNotificationsRead}
+              onDelete={handleDeleteNotification}
+            />
+          );
         case 'admin-project-requests':
           return (
             <AdminProjectRequestsPage
@@ -595,6 +705,8 @@ export default function App() {
           );
         case 'users': return <UserManagement users={users} setUsers={setUsers} />;
         case 'projects': return <ProjectManagement projects={projects} setProjects={setProjects} users={users} onSelectProject={(id) => handleNavigate('project-details', id)} />;
+        case 'site-content':
+          return <SiteContentManagement />;
         default:
           return (
             <AdminDashboard
@@ -617,7 +729,11 @@ export default function App() {
       currentPage={currentPage}
       basketCount={projectBasket.length}
       projects={projects}
+      notifications={notifications}
       onNavigate={handleNavigate}
+      onMarkNotificationRead={handleMarkNotificationRead}
+      onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+      onDeleteNotification={handleDeleteNotification}
       onLogout={handleLogout}
     >
       {renderContent()}

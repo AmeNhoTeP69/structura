@@ -27,6 +27,14 @@ const {
 } = require('../controllers/legacy.controller');
 const { authenticate } = require('../middlewares/authenticate');
 const { authorizeRoles } = require('../middlewares/authorize-roles');
+const {
+  validateRequest,
+  validateAssignmentBody,
+  validateAssignmentPatchBody,
+  validateTimelineLogBody,
+  validateTimelineLogPatchBody,
+  validateProjectDocumentBody,
+} = require('../middlewares/request-validation');
 
 const legacyRouter = Router();
 
@@ -50,12 +58,14 @@ legacyRouter.post(
   '/projects/:id/assignments',
   authenticate,
   authorizeRoles('ADMIN'),
+  validateRequest(validateAssignmentBody),
   createProjectAssignment,
 );
 legacyRouter.patch(
   '/projects/:id/assignments/:assignmentId',
   authenticate,
   authorizeRoles('ADMIN'),
+  validateRequest(validateAssignmentPatchBody),
   updateProjectAssignment,
 );
 legacyRouter.delete(
@@ -74,6 +84,7 @@ legacyRouter.post(
   '/projects/:id/timeline-logs',
   authenticate,
   authorizeRoles('EMPLOYEE', 'ADMIN'),
+  validateRequest(validateTimelineLogBody),
   createProjectTimelineLog,
 );
 legacyRouter.get(
@@ -86,6 +97,7 @@ legacyRouter.post(
   '/projects/:id/documents',
   authenticate,
   authorizeRoles('EMPLOYEE', 'ADMIN'),
+  validateRequest(validateProjectDocumentBody),
   createProjectDocument,
 );
 legacyRouter.get(
@@ -104,6 +116,7 @@ legacyRouter.patch(
   '/projects/:id/timeline-logs/:logId',
   authenticate,
   authorizeRoles('EMPLOYEE', 'ADMIN'),
+  validateRequest(validateTimelineLogPatchBody),
   updateProjectTimelineLog,
 );
 legacyRouter.delete(
